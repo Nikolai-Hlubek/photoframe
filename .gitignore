@@ -1,0 +1,5 @@
+# Geheimnisse
+.env
+
+# Heruntergeladene Fotos und Verkleinerungs-Cache
+/photo/

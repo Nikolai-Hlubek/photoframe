@@ -6,12 +6,14 @@
  * (schont RAM/CPU des alten Tablets). Verkleinerte Bilder werden in
  * CACHE_DIR zwischengespeichert.
  *
- * PHOTO_DIR muss identisch zu list.php sein.
+ * Konfiguration steht zentral in config.php.
  */
 
-$PHOTO_DIR = "photo";          // <-- ANPASSEN (= list.php)
-$CACHE_DIR = "photo/.cache";    // beschreibbarer Ordner
-$JPEG_Q    = 82;                                     // JPEG-Qualitaet 0..100
+$cfg = require __DIR__ . "/config.php";
+
+$PHOTO_DIR = $cfg["photo_dir"];
+$CACHE_DIR = $cfg["cache_dir"];
+$JPEG_Q    = $cfg["jpeg_quality"];
 
 $base = realpath($PHOTO_DIR);
 $rel  = isset($_GET["p"]) ? $_GET["p"] : "";
@@ -47,6 +49,7 @@ $key   = md5($full . "|" . filemtime($full) . "|" . $w) . ".jpg";
 $cache = $CACHE_DIR . "/" . $key;
 
 if (is_file($cache)) {
+    @touch($cache);                 // "zuletzt benutzt" -> schuetzt vor Aufraeumen
     header("Content-Type: image/jpeg");
     header("Cache-Control: public, max-age=86400");
     header("Content-Length: " . filesize($cache));

@@ -2,21 +2,15 @@
 /*
  * list.php  ->  liefert eine JSON-Liste aller Bilder als relative Pfade.
  *
- * Konfiguration: PHOTO_DIR auf den Ordner setzen, in dem deine Fotos liegen.
- * Der Pfad darf irgendwo auf der NAS liegen (muss NICHT unter /web sein),
- * weil die Bilder ueber img.php ausgeliefert werden.
+ * Konfiguration steht zentral in config.php.
  */
 
-$PHOTO_DIR = "photo";   // <-- ANPASSEN
-$RECURSIVE = true;                            // Unterordner mitnehmen?
-$EXT       = array("jpg", "jpeg", "png", "gif", "webp", "bmp");
+$cfg = require __DIR__ . "/config.php";
 
-/*
- * Album-/Ordner-Filter (Whitelist der obersten Unterordner unter PHOTO_DIR).
- * Leer = alle Bilder. Beispiel: array("Urlaub2023", "Familie")
- * Zusaetzlich kann index.html per ?album=Name EIN Album erzwingen.
- */
-$ALBUMS = array();
+$PHOTO_DIR = $cfg["photo_dir"];
+$RECURSIVE = $cfg["recursive"];
+$EXT       = $cfg["extensions"];
+$ALBUMS    = $cfg["albums"];
 
 header("Content-Type: application/json; charset=utf-8");
 header("Cache-Control: no-cache");
@@ -59,6 +53,7 @@ if ($RECURSIVE) {
     foreach ($it as $file) {
         if ($file->isFile() && ext_ok($file->getFilename(), $EXT)) {
             $rel = str_replace("\\", "/", substr($file->getPathname(), strlen($base) + 1));
+            if (strpos($rel, ".cache/") === 0) continue;   // Cache-Ordner auslassen
             if (album_ok($rel, $allowed)) $result[] = $rel;
         }
     }
