@@ -27,20 +27,21 @@ nachkommen.
 
 ```bash
 pkg update && pkg upgrade
-pkg install php openssh git
+pkg install php php-gd openssh git
 termux-setup-storage        # einmalig: Zugriff auf den Telefon-Speicher
 ```
 
-Prüfen, ob die Bildbearbeitung (für das Verkleinern) vorhanden ist:
+Die `gd`-Erweiterung (für das serverseitige Verkleinern) steckt in Termux im
+**eigenen Paket `php-gd`** – ohne das fehlt sie. Prüfen:
 
 ```bash
 php -m | grep -iE 'gd|exif'
 ```
 
 - `gd` vorhanden → optimal.
-- `gd` fehlt → funktioniert trotzdem: `img.php` liefert dann die Originalbilder
-  aus, das Tablet skaliert per CSS. (Auf schwachen Geräten ist `gd` aber
-  schonender.)
+- `gd` fehlt → `pkg install php-gd` nachholen. Notfalls läuft es auch ohne:
+  `img.php` liefert dann die Originalbilder aus und das Tablet skaliert per CSS
+  (auf schwachen Geräten ist `gd` aber schonender).
 
 ---
 
@@ -107,6 +108,8 @@ cp .env.example .env
 ```
 NAS_USER=dein_nas_benutzer
 NAS_PASS=dein_passwort
+NAS_BASE=http://192.168.1.10:5000     # NAS-IP + Port (5000 http / 5001 https)
+REMOTE_DIR=/photo                     # Basis-Ordner auf der NAS
 ```
 
 > Tipp: Auf der NAS einen eigenen Benutzer mit **nur Leserecht** auf den
@@ -116,11 +119,11 @@ NAS_PASS=dein_passwort
 
 Die wichtigsten Regler:
 
+> NAS-Adresse, -Ordner und -Zugang stehen in der `.env` (siehe oben), nicht hier.
+
 | Schlüssel          | Bedeutung                                                        |
 |--------------------|-----------------------------------------------------------------|
 | `photo_dir`        | lokaler Bilderordner (Standard: `photo/` neben den Skripten)     |
-| `nas_base`         | NAS-Adresse + Port, z. B. `http://192.168.178.26:5000`           |
-| `remote_dir`       | Basis-Ordner auf der NAS, z. B. `/photo`                         |
 | `cache_limit_mb`   | maximale Größe des lokalen Caches (z. B. `10000` = 10 GB)        |
 | `refresh_mb`       | wie viel pro Sync-Lauf ausgetauscht wird (älteste raus, neue rein)|
 | `sync_hours`       | Intervall für `php sync.php --loop`                              |
@@ -249,5 +252,5 @@ Per URL überschreibbar, z. B.:
 | `list.php` liefert `[]`                    | `photo/` leer → erst `php sync.php` laufen lassen.            |
 | `sync.php`: „Login fehlgeschlagen"        | `.env`-Daten falsch, oder `nas_base`-Port stimmt nicht.      |
 | Keine Bilder aus einem Ordner             | Schreibweise in `remote_subdirs.txt` ≠ NAS (Groß/Klein, Leerzeichen). |
-| Bilder werden nicht verkleinert           | `gd` fehlt (siehe Schritt 1) – funktioniert, nur unkomprimiert. |
+| Bilder werden nicht verkleinert           | `gd` fehlt → `pkg install php-gd` (siehe Schritt 1). Läuft sonst unkomprimiert. |
 | Telefon-Display geht aus                  | `termux-wake-lock` und in Fully Kiosk *Keep Screen On*.       |
