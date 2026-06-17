@@ -1,12 +1,12 @@
 <?php
 /*
- * img.php?p=<relativer Pfad>&w=<maxBreite>
+ * img.php?p=<relative path>&w=<maxWidth>
  *
- * Liefert ein Bild aus PHOTO_DIR aus. Optional serverseitig verkleinert
- * (schont RAM/CPU des alten Tablets). Verkleinerte Bilder werden in
- * CACHE_DIR zwischengespeichert.
+ * Serves an image from PHOTO_DIR. Optionally downscaled server-side
+ * (saves RAM/CPU on the old tablet). Downscaled images are cached
+ * in CACHE_DIR.
  *
- * Konfiguration steht zentral in config.php.
+ * Configuration lives centrally in config.php.
  */
 
 $cfg = require __DIR__ . "/config.php";
@@ -19,7 +19,7 @@ $base = realpath($PHOTO_DIR);
 $rel  = isset($_GET["p"]) ? $_GET["p"] : "";
 $w    = isset($_GET["w"]) ? intval($_GET["w"]) : 0;
 
-/* ---- Pfad absichern (kein Verzeichnis-Ausbruch) ---- */
+/* ---- sanitize path (no directory traversal) ---- */
 if ($base === false || $rel === "") { http_response_code(400); exit; }
 $rel  = str_replace("\\", "/", $rel);
 $full = realpath($base . "/" . $rel);
@@ -30,7 +30,7 @@ if ($full === false || strpos($full, $base) !== 0 || !is_file($full)) {
 $info = @getimagesize($full);
 $mime = $info ? $info["mime"] : "application/octet-stream";
 
-/* ---- Ohne Verkleinerung oder ohne GD: Original durchreichen ---- */
+/* ---- no downscaling or no GD: pass the original through ---- */
 $canResize = function_exists("imagecreatetruecolor") && $info &&
              ($info[0] > $w) && $w > 0 &&
              in_array($mime, array("image/jpeg", "image/png"), true);
@@ -43,13 +43,13 @@ if (!$canResize) {
     exit;
 }
 
-/* ---- Cache pruefen ---- */
+/* ---- check cache ---- */
 if (!is_dir($CACHE_DIR)) @mkdir($CACHE_DIR, 0777, true);
 $key   = md5($full . "|" . filemtime($full) . "|" . $w) . ".jpg";
 $cache = $CACHE_DIR . "/" . $key;
 
 if (is_file($cache)) {
-    @touch($cache);                 // "zuletzt benutzt" -> schuetzt vor Aufraeumen
+    @touch($cache);                 // mark "last used" -> protects from cleanup
     header("Content-Type: image/jpeg");
     header("Cache-Control: public, max-age=86400");
     header("Content-Length: " . filesize($cache));
@@ -57,7 +57,7 @@ if (is_file($cache)) {
     exit;
 }
 
-/* ---- Verkleinern ---- */
+/* ---- downscale ---- */
 $src = ($mime === "image/png") ? @imagecreatefrompng($full) : @imagecreatefromjpeg($full);
 if (!$src) {
     header("Content-Type: " . $mime);
@@ -69,7 +69,7 @@ $nw = $w; $nh = (int) round($oh * ($w / $ow));
 $dst = imagecreatetruecolor($nw, $nh);
 imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $ow, $oh);
 
-/* EXIF-Drehung bei JPEG anwenden */
+/* apply EXIF orientation for JPEG */
 if ($mime === "image/jpeg" && function_exists("exif_read_data")) {
     $exif = @exif_read_data($full);
     if (!empty($exif["Orientation"])) {
@@ -80,7 +80,7 @@ if ($mime === "image/jpeg" && function_exists("exif_read_data")) {
     }
 }
 
-imagejpeg($dst, $cache, $JPEG_Q);   // in Cache schreiben
+imagejpeg($dst, $cache, $JPEG_Q);   // write to cache
 imagedestroy($src); imagedestroy($dst);
 
 header("Content-Type: image/jpeg");

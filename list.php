@@ -1,8 +1,8 @@
 <?php
 /*
- * list.php  ->  liefert eine JSON-Liste aller Bilder als relative Pfade.
+ * list.php  ->  returns a JSON list of all images as relative paths.
  *
- * Konfiguration steht zentral in config.php.
+ * Configuration lives centrally in config.php.
  */
 
 $cfg = require __DIR__ . "/config.php";
@@ -23,9 +23,9 @@ if ($base === false || !is_dir($base)) {
 
 $result = array();
 
-/* ?album= aus index.html hat Vorrang vor der Whitelist */
+/* ?album= from index.html takes precedence over the whitelist */
 $override = isset($_GET["album"]) ? trim($_GET["album"]) : "";
-$override = str_replace(array("/", "\\", ".."), "", $override); // absichern
+$override = str_replace(array("/", "\\", ".."), "", $override); // sanitize
 if ($override !== "") {
     $allowed = array($override);
 } else {
@@ -39,9 +39,9 @@ function ext_ok($name, $exts) {
     return in_array($e, $exts, true);
 }
 
-/* prueft, ob der relative Pfad im erlaubten Album liegt */
+/* checks whether the relative path is inside an allowed album */
 function album_ok($rel, $allowed) {
-    if (empty($allowed)) return true;          // kein Filter -> alles
+    if (empty($allowed)) return true;          // no filter -> everything
     $top = explode("/", $rel);
     return in_array($top[0], $allowed, true);
 }
@@ -53,7 +53,7 @@ if ($RECURSIVE) {
     foreach ($it as $file) {
         if ($file->isFile() && ext_ok($file->getFilename(), $EXT)) {
             $rel = str_replace("\\", "/", substr($file->getPathname(), strlen($base) + 1));
-            if (strpos($rel, ".cache/") === 0) continue;   // Cache-Ordner auslassen
+            if (strpos($rel, ".cache/") === 0) continue;   // skip the cache folder
             if (album_ok($rel, $allowed)) $result[] = $rel;
         }
     }

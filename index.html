@@ -14,7 +14,7 @@
     overflow: hidden;
     cursor: none;
   }
-  /* Zwei uebereinanderliegende Ebenen fuer den Crossfade */
+  /* Two stacked layers for the crossfade */
   .layer {
     position: absolute;
     top: 0;
@@ -23,7 +23,7 @@
     height: 100%;
     background-position: center center;
     background-repeat: no-repeat;
-    background-size: contain;          /* ganzes Bild zeigen; "cover" = formatfuellend */
+    background-size: contain;          /* show whole image; "cover" = fill the frame */
     opacity: 0;
     -webkit-transition: opacity 1.5s ease-in-out;
     transition: opacity 1.5s ease-in-out;
@@ -42,7 +42,7 @@
     font-size: 20px;
   }
 
-  /* Gemeinsame Optik der Overlays */
+  /* Shared styling of the overlays */
   .overlay {
     position: absolute;
     bottom: 16px;
@@ -50,12 +50,12 @@
     font-family: sans-serif;
     text-shadow: 0 1px 4px rgba(0,0,0,0.85);
   }
-  /* Uhr + Datum rechts unten */
+  /* clock + date bottom right */
   #datetime { right: 24px; text-align: right; }
   #clock { font-size: 30px; line-height: 1.1; }
   #date  { font-size: 17px; color: rgba(255,255,255,0.7); }
 
-  /* Wetter links unten */
+  /* weather bottom left */
   #weather { left: 24px; display: none; }
   #weather .wsym  { font-size: 26px; vertical-align: middle; margin-right: 6px; }
   #weather .wtemp { font-size: 30px; vertical-align: middle; }
@@ -81,25 +81,25 @@
 (function () {
   "use strict";
 
-  /* ====================== Einstellungen ====================== */
-  var INTERVAL_MS    = 20000;  // Anzeigedauer pro Bild (ms)
-  var MAX_WIDTH      = 1280;   // serverseitige Verkleinerung (px); 0 = Original
-  var SHUFFLE        = true;   // Zufallsreihenfolge
-  var RELOAD_LIST_MS = 60 * 60 * 1000; // Bilderliste stuendlich neu laden
+  /* ====================== settings ====================== */
+  var INTERVAL_MS    = 20000;  // display time per image (ms)
+  var MAX_WIDTH      = 1280;   // server-side downscale (px); 0 = original
+  var SHUFFLE        = true;   // random order
+  var RELOAD_LIST_MS = 60 * 60 * 1000; // reload image list hourly
 
-  var SHOW_CLOCK   = true;     // Uhr
-  var SHOW_DATE    = true;     // Datum
-  var SHOW_WEATHER = true;     // Wetter (Open-Meteo, kein API-Key noetig)
+  var SHOW_CLOCK   = true;     // clock
+  var SHOW_DATE    = true;     // date
+  var SHOW_WEATHER = true;     // weather (Open-Meteo, no API key needed)
 
-  /* Koordinaten fuer das Wetter (z.B. Berlin). Eigene unter latlong.net o.ae. */
+  /* Coordinates for the weather (e.g. Berlin). Find yours at latlong.net etc. */
   var WEATHER_LAT  = 52.52;
   var WEATHER_LON  = 13.41;
-  var WEATHER_MS   = 30 * 60 * 1000;   // alle 30 Min aktualisieren
+  var WEATHER_MS   = 30 * 60 * 1000;   // refresh every 30 min
 
-  /* Nur ein bestimmtes Album zeigen? -> per URL: index.html?album=Urlaub2023 */
-  /* (oder dauerhaft in list.php als Whitelist konfigurieren)                 */
+  /* Show only one album? -> via URL: index.html?album=Urlaub2023 */
+  /* (or configure permanently as a whitelist in config.php)       */
 
-  /* URL-Override, z.B. index.html?interval=30000&width=1024&album=Familie    */
+  /* URL override, e.g. index.html?interval=30000&width=1024&album=Familie */
   /* =========================================================== */
 
   var q = parseQuery();
@@ -107,8 +107,8 @@
   if (q.width)    MAX_WIDTH   = parseInt(q.width, 10);
 
   var layers  = [document.getElementById("a"), document.getElementById("b")];
-  var front   = 0;            // aktuell sichtbare Ebene
-  var images  = [];          // Liste der Bildpfade (relativ)
+  var front   = 0;            // currently visible layer
+  var images  = [];          // list of image paths (relative)
   var idx     = 0;
   var timer   = null;
   var msgEl   = document.getElementById("message");
@@ -170,7 +170,7 @@
     if (!images.length) return;
     var path = images[idx];
     idx = (idx + 1) % images.length;
-    if (idx === 0 && SHUFFLE) shuffle(images); // bei jeder Runde neu mischen
+    if (idx === 0 && SHUFFLE) shuffle(images); // reshuffle each round
 
     var img = new Image();
     img.onload = function () {
@@ -180,14 +180,14 @@
       layers[front].className = "layer";
       front = back;
     };
-    img.onerror = function () { showNext(); }; // defektes Bild ueberspringen
+    img.onerror = function () { showNext(); }; // skip broken image
     img.src = imageUrl(path);
   }
 
   function showMessage(t) { msgEl.style.display = "block"; msgEl.innerHTML = t; }
   function hideMessage()  { msgEl.style.display = "none"; }
 
-  /* ---------------- Uhr & Datum ---------------- */
+  /* ---------------- clock & date ---------------- */
   var clockEl = document.getElementById("clock");
   var dateEl  = document.getElementById("date");
   var WTAGE   = ["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
@@ -204,8 +204,8 @@
   if (SHOW_CLOCK || SHOW_DATE) { tick(); setInterval(tick, 20000); }
   else { document.getElementById("datetime").style.display = "none"; }
 
-  /* ---------------- Wetter (Open-Meteo) ---------------- */
-  /* WMO-Wettercodes -> Symbol + deutscher Text */
+  /* ---------------- weather (Open-Meteo) ---------------- */
+  /* WMO weather codes -> symbol + German text */
   function weatherInfo(code) {
     if (code === 0)                       return ["☀", "Klar"];
     if (code === 1 || code === 2)         return ["⛅", "Heiter"];
@@ -245,14 +245,14 @@
   }
   if (SHOW_WEATHER) { loadWeather(); setInterval(loadWeather, WEATHER_MS); }
 
-  /* Tippen = Vollbild versuchen (best effort) */
+  /* tap = try fullscreen (best effort) */
   document.body.addEventListener("click", function () {
     var el = document.documentElement;
     var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen;
     if (fn) { try { fn.call(el); } catch (e) {} }
   }, false);
 
-  /* Liste regelmaessig aktualisieren (neue Fotos) */
+  /* refresh list periodically (new photos) */
   setInterval(function () { loadList(false); }, RELOAD_LIST_MS);
 
   loadList(true);

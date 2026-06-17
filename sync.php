@@ -1,22 +1,22 @@
 <?php
 /*
- * sync.php  ->  haelt lokal einen groessenbegrenzten Foto-Cache vom NAS.
+ * sync.php  ->  keeps a size-limited photo cache from the NAS locally.
  *
- * Reines PHP ueber die Synology FileStation-API (HTTP/JSON).
- * Pro Lauf:
- *   1. Bilder loeschen, die auf der NAS nicht mehr existieren (optional)
- *   2. ist der Cache voll: die aeltesten ~refresh_mb loeschen (Platz schaffen)
- *   3. neue Zufallsfotos laden, bis cache_limit_mb erreicht ist
+ * Pure PHP via the Synology FileStation API (HTTP/JSON).
+ * Per run:
+ *   1. delete images that no longer exist on the NAS (optional)
+ *   2. if the cache is full: delete the oldest ~refresh_mb (make room)
+ *   3. download new random photos until cache_limit_mb is reached
  *
- * Der Server weiss NICHT, was gerade angezeigt wird -- er sorgt nur dafuer,
- * dass lokal hoechstens cache_limit_mb liegen und ab und zu frische dazukommen.
+ * The server does NOT know what is currently displayed -- it only makes sure
+ * at most cache_limit_mb live locally and fresh ones arrive now and then.
  *
- * Aufruf:
- *   php sync.php            -> einmal synchronisieren
- *   php sync.php --loop     -> Endlosschleife, alle sync_hours Stunden
+ * Usage:
+ *   php sync.php            -> sync once
+ *   php sync.php --loop     -> endless loop, every sync_hours hours
  */
 
-/* ---- Konfiguration zentral aus config.php ---- */
+/* ---- configuration centrally from config.php ---- */
 $cfg = require __DIR__ . "/config.php";
 
 $NAS_BASE    = $cfg["nas_base"];
@@ -28,8 +28,8 @@ $LOCAL_DIR   = $cfg["photo_dir"];
 $SYNC_HOURS  = $cfg["sync_hours"];
 $EXT         = $cfg["extensions"];
 $DELETE_OLD  = $cfg["delete_old"];
-$CACHE_LIMIT = $cfg["cache_limit_mb"] * 1024 * 1024;   // -> Bytes
-$REFRESH     = $cfg["refresh_mb"]     * 1024 * 1024;   // -> Bytes
+$CACHE_LIMIT = $cfg["cache_limit_mb"] * 1024 * 1024;   // -> bytes
+$REFRESH     = $cfg["refresh_mb"]     * 1024 * 1024;   // -> bytes
 $CACHE_DIR   = $cfg["cache_dir"];
 $KEEP_DAYS   = $cfg["cache_keep_days"];
 
@@ -45,7 +45,7 @@ do {
 } while ($LOOP);
 
 
-/* ---------------------- Ablauf ---------------------- */
+/* ---------------------- main flow ---------------------- */
 function run_sync() {
     global $NAS_BASE, $REMOTE_DIR, $REMOTE_SUBS, $LOCAL_DIR, $DELETE_OLD, $CACHE_LIMIT, $REFRESH;
 
@@ -55,8 +55,8 @@ function run_sync() {
 
     if (!is_dir($LOCAL_DIR)) @mkdir($LOCAL_DIR, 0777, true);
 
-    /* NAS-Katalog: relPfad => Groesse. Entweder ganzer remote_dir oder nur
-       die in remote_subdirs gelisteten Unterordner (je rekursiv). */
+    /* NAS catalog: relPath => size. Either the whole remote_dir or only
+       the subfolders listed in remote_subdirs (each recursive). */
     $remote = array();
     if (empty($REMOTE_SUBS)) {
         nas_walk($sid, $REMOTE_DIR, "", $remote);
@@ -70,10 +70,10 @@ function run_sync() {
     logmsg(count($remote) . " Bilder auf der NAS (in " .
            (empty($REMOTE_SUBS) ? "allen Ordnern" : count($REMOTE_SUBS) . " Ordner(n)") . ").");
 
-    /* Lokaler Bestand: relPfad => array(mtime, size) */
+    /* local stock: relPath => array(mtime, size) */
     $local = local_images($LOCAL_DIR);
 
-    /* 1) Lokal loeschen, was auf der NAS nicht mehr existiert */
+    /* 1) delete locally what no longer exists on the NAS */
     if ($DELETE_OLD) {
         foreach ($local as $rel => $meta) {
             if (!isset($remote[$rel])) {
@@ -87,19 +87,19 @@ function run_sync() {
     $total = 0;
     foreach ($local as $m) $total += $m["size"];
 
-    /* Kandidaten = NAS-Bilder, die noch nicht lokal liegen (zufaellig) */
+    /* candidates = NAS images not yet local (random order) */
     $new = array();
     foreach ($remote as $rel => $size) if (!isset($local[$rel])) $new[] = $rel;
     shuffle($new);
 
-    /* 2) Ist der Cache voll und gibt es Nachschub: aelteste ~REFRESH loeschen */
+    /* 2) if the cache is full and there is supply: delete the oldest ~REFRESH */
     if (!empty($new) && $total >= $CACHE_LIMIT) {
         $freed = evict_oldest($local, $LOCAL_DIR, $REFRESH);
         $total -= $freed;
         logmsg("  Platz geschafft: " . mb($freed) . " (aelteste Bilder).");
     }
 
-    /* 3) Neue Zufallsfotos laden, bis das Limit erreicht ist */
+    /* 3) download new random photos until the limit is reached */
     $dl = 0; $dlbytes = 0;
     foreach ($new as $rel) {
         if ($total >= $CACHE_LIMIT) break;
@@ -115,14 +115,14 @@ function run_sync() {
     logmsg($dl . " neue Bild(er) geladen (" . mb($dlbytes) . ").");
     logmsg("Cache jetzt: " . mb($total) . " / " . mb($CACHE_LIMIT) . ".");
 
-    /* 4) Verkleinerungs-Cache aufraeumen (lange nicht gezeigte Dateien) */
+    /* 4) clean up the downscale cache (files not shown for a long time) */
     prune_cache();
 
     nas_logout($sid);
     logmsg("Sync fertig.");
 }
 
-/* loescht .cache-Dateien, die seit KEEP_DAYS nicht mehr angezeigt wurden */
+/* deletes .cache files not displayed since KEEP_DAYS */
 function prune_cache() {
     global $CACHE_DIR, $KEEP_DAYS;
     if ($KEEP_DAYS <= 0 || !is_dir($CACHE_DIR)) return;
@@ -143,9 +143,9 @@ function prune_cache() {
     if ($del) logmsg("  Cache aufgeraeumt: " . $del . " Datei(en), " . mb($bytes) . ".");
 }
 
-/* loescht die aeltesten lokalen Bilder, bis $bytes frei sind; gibt befreite Bytes zurueck */
+/* deletes the oldest local images until $bytes are free; returns freed bytes */
 function evict_oldest(&$local, $base, $bytes) {
-    /* nach mtime aufsteigend sortieren (aelteste = zuerst geladen) */
+    /* sort by mtime ascending (oldest = downloaded first) */
     uasort($local, function ($a, $b) { return $a["mtime"] - $b["mtime"]; });
     $freed = 0;
     foreach ($local as $rel => $meta) {
@@ -158,7 +158,7 @@ function evict_oldest(&$local, $base, $bytes) {
 }
 
 
-/* ---------------------- FileStation-API ---------------------- */
+/* ---------------------- FileStation API ---------------------- */
 function nas_login() {
     global $NAS_BASE, $NAS_USER, $NAS_PASS;
     $url = $NAS_BASE . "/webapi/auth.cgi?api=SYNO.API.Auth&version=3&method=login"
@@ -175,7 +175,7 @@ function nas_logout($sid) {
            . "&session=FileStation&_sid=" . rawurlencode($sid));
 }
 
-/* listet $path und steigt rekursiv in Unterordner ab; fuellt $out[relPfad]=size */
+/* lists $path and recurses into subfolders; fills $out[relPath]=size */
 function nas_walk($sid, $path, $prefix, &$out) {
     global $NAS_BASE, $EXT;
     $url = $NAS_BASE . "/webapi/entry.cgi?api=SYNO.FileStation.List&version=2&method=list"
@@ -189,7 +189,7 @@ function nas_walk($sid, $path, $prefix, &$out) {
         $name = $f["name"];
         $rel  = $prefix === "" ? $name : $prefix . "/" . $name;
         if (!empty($f["isdir"])) {
-            nas_walk($sid, $path . "/" . $name, $rel, $out);     // Unterordner
+            nas_walk($sid, $path . "/" . $name, $rel, $out);     // subfolder
         } else if (ext_ok($name, $EXT)) {
             $out[$rel] = isset($f["additional"]["size"]) ? (int)$f["additional"]["size"] : 0;
         }
@@ -205,14 +205,14 @@ function nas_download($sid, $remotePath, $localFile) {
 }
 
 
-/* ---------------------- Helfer ---------------------- */
+/* ---------------------- helpers ---------------------- */
 function ext_ok($name, $exts) {
     $dot = strrpos($name, ".");
     if ($dot === false) return false;
     return in_array(strtolower(substr($name, $dot + 1)), $exts, true);
 }
 
-/* alle lokalen Bilder: relPfad => array(mtime, size); ohne .cache */
+/* all local images: relPath => array(mtime, size); excluding .cache */
 function local_images($base) {
     global $EXT;
     $out = array();
