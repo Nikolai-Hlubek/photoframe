@@ -31,6 +31,20 @@ if (!function_exists("load_env")) {
     }
 }
 
+/* --- Liste aus Datei: eine Zeile = ein Eintrag, # = Kommentar, leer = ignoriert --- */
+if (!function_exists("load_lines")) {
+    function load_lines($path) {
+        $out = array();
+        if (!is_file($path)) return $out;
+        foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            $line = trim($line);
+            if ($line === "" || $line[0] === "#") continue;
+            $out[] = $line;
+        }
+        return $out;
+    }
+}
+
 $env = load_env(__DIR__ . "/.env");
 
 return array(
@@ -66,7 +80,11 @@ return array(
     "nas_base"    => "http://192.168.178.26:5050",          // NAS-IP + Port (5000 http / 5001 https)
     "nas_user"    => isset($env["NAS_USER"]) ? $env["NAS_USER"] : "",  // <-- aus .env
     "nas_pass"    => isset($env["NAS_PASS"]) ? $env["NAS_PASS"] : "",  // <-- aus .env
-    "remote_dir"  => "/photo/Fotorahmen",                   // Freigabe + Ordner auf der NAS
+    "remote_dir"  => "/photo",                              // Basis-Ordner auf der NAS
+    // Liste der zu beruecksichtigenden Unterordner steht in remote_subdirs.txt
+    // (nicht eingecheckt). Eine Zeile = ein Ordner, je rekursiv.
+    // Datei fehlt/leer = kompletten remote_dir nehmen.
+    "remote_subdirs" => load_lines(__DIR__ . "/remote_subdirs.txt"),
     "sync_hours"  => 24,                                      // Intervall fuer "php sync.php --loop"
     "delete_old"  => true,                                   // lokal loeschen, was auf NAS fehlt?
 );

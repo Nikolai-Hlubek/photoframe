@@ -1,5 +1,8 @@
 # Geheimnisse
 .env
 
+# Lokale Ordnerauswahl (nicht teilen)
+remote_subdirs.txt
+
 # Heruntergeladene Fotos und Verkleinerungs-Cache
 /photo/

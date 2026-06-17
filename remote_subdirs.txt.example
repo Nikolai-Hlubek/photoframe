@@ -1,0 +1,10 @@
+# Vorlage -- kopieren nach remote_subdirs.txt und eigene Ordner eintragen:
+#   cp remote_subdirs.txt.example remote_subdirs.txt
+#
+# Eine Zeile = ein Unterordner unter remote_dir (rekursiv).
+# Zeilen mit # sind Kommentare. Datei fehlt oder leer = ALLE Ordner anzeigen.
+#
+# Beispiel:
+# Urlaub2023
+# Familie
+# Feiern/Hochzeit

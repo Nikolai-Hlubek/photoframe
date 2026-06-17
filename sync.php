@@ -23,6 +23,7 @@ $NAS_BASE    = $cfg["nas_base"];
 $NAS_USER    = $cfg["nas_user"];
 $NAS_PASS    = $cfg["nas_pass"];
 $REMOTE_DIR  = $cfg["remote_dir"];
+$REMOTE_SUBS = $cfg["remote_subdirs"];
 $LOCAL_DIR   = $cfg["photo_dir"];
 $SYNC_HOURS  = $cfg["sync_hours"];
 $EXT         = $cfg["extensions"];
@@ -46,7 +47,7 @@ do {
 
 /* ---------------------- Ablauf ---------------------- */
 function run_sync() {
-    global $NAS_BASE, $REMOTE_DIR, $LOCAL_DIR, $DELETE_OLD, $CACHE_LIMIT, $REFRESH;
+    global $NAS_BASE, $REMOTE_DIR, $REMOTE_SUBS, $LOCAL_DIR, $DELETE_OLD, $CACHE_LIMIT, $REFRESH;
 
     logmsg("Login an " . $NAS_BASE . " ...");
     $sid = nas_login();
@@ -54,10 +55,20 @@ function run_sync() {
 
     if (!is_dir($LOCAL_DIR)) @mkdir($LOCAL_DIR, 0777, true);
 
-    /* NAS-Katalog: relPfad => Groesse */
+    /* NAS-Katalog: relPfad => Groesse. Entweder ganzer remote_dir oder nur
+       die in remote_subdirs gelisteten Unterordner (je rekursiv). */
     $remote = array();
-    nas_walk($sid, $REMOTE_DIR, "", $remote);
-    logmsg(count($remote) . " Bilder auf der NAS.");
+    if (empty($REMOTE_SUBS)) {
+        nas_walk($sid, $REMOTE_DIR, "", $remote);
+    } else {
+        foreach ($REMOTE_SUBS as $sub) {
+            $sub = trim($sub, "/");
+            if ($sub === "") continue;
+            nas_walk($sid, $REMOTE_DIR . "/" . $sub, $sub, $remote);
+        }
+    }
+    logmsg(count($remote) . " Bilder auf der NAS (in " .
+           (empty($REMOTE_SUBS) ? "allen Ordnern" : count($REMOTE_SUBS) . " Ordner(n)") . ").");
 
     /* Lokaler Bestand: relPfad => array(mtime, size) */
     $local = local_images($LOCAL_DIR);
