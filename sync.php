@@ -160,13 +160,42 @@ function evict_oldest(&$local, $base, $bytes) {
 
 /* ---------------------- FileStation API ---------------------- */
 function nas_login() {
-    global $NAS_BASE, $NAS_USER, $NAS_PASS;
+    global $NAS_BASE, $NAS_USER, $NAS_PASS, $HTTP_ERR;
     $url = $NAS_BASE . "/webapi/auth.cgi?api=SYNO.API.Auth&version=3&method=login"
          . "&account=" . rawurlencode($NAS_USER)
          . "&passwd="  . rawurlencode($NAS_PASS)
          . "&session=FileStation&format=sid";
-    $r = json_decode(http_get($url), true);
-    return ($r && !empty($r["success"])) ? $r["data"]["sid"] : null;
+    $raw = http_get($url);
+    if ($raw === false || $raw === null || $raw === "") {
+        logmsg("  Keine Antwort von der NAS. " . $HTTP_ERR);
+        logmsg("  -> Stimmen IP/Port (NAS_BASE) und ist die Synology erreichbar?");
+        return null;
+    }
+    $r = json_decode($raw, true);
+    if (!is_array($r)) {
+        logmsg("  Antwort nicht als JSON lesbar: " . substr(trim($raw), 0, 200));
+        return null;
+    }
+    if (empty($r["success"])) {
+        $code = isset($r["error"]["code"]) ? $r["error"]["code"] : "?";
+        logmsg("  API-Fehlercode " . $code . " (" . auth_err($code) . ")");
+        return null;
+    }
+    return $r["data"]["sid"];
+}
+
+/* Klartext zu den haeufigsten SYNO.API.Auth-Fehlercodes */
+function auth_err($code) {
+    switch ((int)$code) {
+        case 400: return "Konto oder Passwort falsch";
+        case 401: return "Konto deaktiviert";
+        case 402: return "Berechtigung verweigert";
+        case 403: return "2-Faktor-Code (OTP) erforderlich";
+        case 404: return "2-Faktor-Code falsch";
+        case 406: return "OTP-Erzwingung; App-Passwort noetig";
+        case 119: return "Sitzung/SID ungueltig";
+        default:  return "siehe Synology-API-Doku";
+    }
 }
 
 function nas_logout($sid) {
@@ -233,16 +262,24 @@ function local_images($base) {
 function mb($bytes) { return round($bytes / 1048576, 1) . " MB"; }
 
 function http_get($url) {
+    global $HTTP_ERR;
+    $HTTP_ERR = "";
     if (function_exists("curl_init")) {
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         $body = curl_exec($ch);
-        curl_close($ch);
-        return $body;
+        if ($body === false) {
+            $HTTP_ERR = "curl: " . curl_error($ch)
+                      . " (HTTP " . curl_getinfo($ch, CURLINFO_HTTP_CODE) . ")";
+        }
+        return $body;   // kein curl_close noetig (seit PHP 8.0 wirkungslos)
     }
-    return @file_get_contents($url);
+    $body = @file_get_contents($url);
+    if ($body === false) $HTTP_ERR = "file_get_contents fehlgeschlagen (allow_url_fopen?)";
+    return $body;
 }
 
 function http_download($url, $localFile) {
@@ -252,9 +289,9 @@ function http_download($url, $localFile) {
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_FILE, $fp);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 300);
         $ok = curl_exec($ch);
-        curl_close($ch);
         fclose($fp);
         if (!$ok) @unlink($localFile);
         return (bool)$ok;
