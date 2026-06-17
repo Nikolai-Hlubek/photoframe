@@ -76,11 +76,11 @@ return array(
     // Tage nicht mehr angezeigt wurden. 0 = nie aufraeumen.
     "cache_keep_days" => 7,
 
-    /* ---------- NAS-Sync (sync.php) ---------- */
-    "nas_base"    => "http://192.168.178.26:5050",          // NAS-IP + Port (5000 http / 5001 https)
-    "nas_user"    => isset($env["NAS_USER"]) ? $env["NAS_USER"] : "",  // <-- aus .env
-    "nas_pass"    => isset($env["NAS_PASS"]) ? $env["NAS_PASS"] : "",  // <-- aus .env
-    "remote_dir"  => "/photo",                              // Basis-Ordner auf der NAS
+    /* ---------- NAS-Sync (sync.php) -- Adresse/Zugang aus .env ---------- */
+    "nas_base"    => isset($env["NAS_BASE"]) ? $env["NAS_BASE"] : "",        // <-- aus .env
+    "nas_user"    => isset($env["NAS_USER"]) ? $env["NAS_USER"] : "",        // <-- aus .env
+    "nas_pass"    => isset($env["NAS_PASS"]) ? $env["NAS_PASS"] : "",        // <-- aus .env
+    "remote_dir"  => isset($env["REMOTE_DIR"]) ? $env["REMOTE_DIR"] : "/photo", // <-- aus .env
     // Liste der zu beruecksichtigenden Unterordner steht in remote_subdirs.txt
     // (nicht eingecheckt). Eine Zeile = ein Ordner, je rekursiv.
     // Datei fehlt/leer = kompletten remote_dir nehmen.
