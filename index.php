@@ -10,6 +10,8 @@ function jsbool($b) { return $b ? "true" : "false"; }
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Fotorahmen</title>
 <style>
+  /* --uiscale: feintuning; Basis-Groessen in vmin skalieren mit der Displaygroesse */
+  :root { --uiscale: <?= json_encode((float)$cfg["ui_scale"]) ?>; }
   html, body {
     margin: 0;
     padding: 0;
@@ -44,27 +46,29 @@ function jsbool($b) { return $b ? "true" : "false"; }
     text-align: center;
     color: #888;
     font-family: sans-serif;
-    font-size: 20px;
+    font-size: 20px;                                   /* fallback */
+    font-size: calc(3vmin * var(--uiscale));
   }
 
   /* Shared styling of the overlays */
   .overlay {
     position: absolute;
-    bottom: 16px;
+    bottom: 16px;                                      /* fallback */
+    bottom: 2.5vmin;
     color: rgba(255,255,255,0.85);
     font-family: sans-serif;
     text-shadow: 0 1px 4px rgba(0,0,0,0.85);
   }
   /* clock + date bottom right */
-  #datetime { right: 24px; text-align: right; }
-  #clock { font-size: 30px; line-height: 1.1; }
-  #date  { font-size: 17px; color: rgba(255,255,255,0.7); }
+  #datetime { right: 24px; right: 3vmin; text-align: right; }
+  #clock { font-size: 30px; font-size: calc(4.6vmin * var(--uiscale)); line-height: 1.1; }
+  #date  { font-size: 17px; font-size: calc(2.6vmin * var(--uiscale)); color: rgba(255,255,255,0.7); }
 
   /* weather bottom left */
-  #weather { left: 24px; display: none; }
-  #weather .wsym  { font-size: 26px; vertical-align: middle; margin-right: 6px; }
-  #weather .wtemp { font-size: 30px; vertical-align: middle; }
-  #weather .wdesc { font-size: 17px; color: rgba(255,255,255,0.7); }
+  #weather { left: 24px; left: 3vmin; display: none; }
+  #weather .wsym  { font-size: 26px; font-size: calc(4vmin * var(--uiscale)); vertical-align: middle; margin-right: 6px; }
+  #weather .wtemp { font-size: 30px; font-size: calc(4.6vmin * var(--uiscale)); vertical-align: middle; }
+  #weather .wdesc { font-size: 17px; font-size: calc(2.6vmin * var(--uiscale)); color: rgba(255,255,255,0.7); }
 </style>
 </head>
 <body>

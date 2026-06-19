@@ -66,6 +66,9 @@ return array(
     array("key"=>"reload_list_min", "label"=>"Liste neu laden (Min)", "group"=>"Anzeige",
           "help"=>"Wie oft das Tablet die Bilderliste neu holt.", "type"=>"int",
           "default"=>60, "store"=>"settings"),
+    array("key"=>"ui_scale", "label"=>"Schriftgroesse Overlays (x)", "group"=>"Anzeige",
+          "help"=>"Multiplikator fuer Uhr/Datum/Wetter. 1.0 = Standard, 1.5 = groesser.",
+          "type"=>"float", "default"=>1.0, "store"=>"settings"),
 
     /* ---------- Cache / sync ---------- */
     array("key"=>"photo_dir", "label"=>"Bilderordner", "group"=>"Cache/Sync",
