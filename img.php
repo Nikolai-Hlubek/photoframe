@@ -10,6 +10,8 @@
  */
 
 $cfg = require __DIR__ . "/config.php";
+require __DIR__ . "/log.php";
+log_set_max($cfg["log_max_kb"]);
 
 $PHOTO_DIR = $cfg["photo_dir"];
 $CACHE_DIR = $cfg["cache_dir"];
@@ -24,7 +26,9 @@ if ($base === false || $rel === "") { http_response_code(400); exit; }
 $rel  = str_replace("\\", "/", $rel);
 $full = realpath($base . "/" . $rel);
 if ($full === false || strpos($full, $base) !== 0 || !is_file($full)) {
-    http_response_code(404); exit;
+    http_response_code(404);
+    logweb("img 404: " . $rel);
+    exit;
 }
 
 $info = @getimagesize($full);

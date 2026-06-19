@@ -4,5 +4,11 @@
 # Lokale Ordnerauswahl (nicht teilen)
 remote_subdirs.txt
 
+# Per UI geaenderte Einstellungen (geraetespezifisch)
+settings.json
+
+# Logs
+/logs/
+
 # Heruntergeladene Fotos und Verkleinerungs-Cache
 /photo/

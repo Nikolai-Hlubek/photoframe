@@ -1,4 +1,9 @@
-<!DOCTYPE html>
+<?php
+/* index.php -> slideshow page. Display settings are injected from config.php
+ * (which reads schema defaults + settings.json + .env). */
+$cfg = require __DIR__ . "/config.php";
+function jsbool($b) { return $b ? "true" : "false"; }
+?><!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
@@ -81,26 +86,23 @@
 (function () {
   "use strict";
 
-  /* ====================== settings ====================== */
-  var INTERVAL_MS    = 20000;  // display time per image (ms)
-  var MAX_WIDTH      = 1280;   // server-side downscale (px); 0 = original
-  var SHUFFLE        = true;   // random order
-  var RELOAD_LIST_MS = 60 * 60 * 1000; // reload image list hourly
+  /* ===== settings injected from config.php (.env / settings.json) ===== */
+  var INTERVAL_MS    = <?= (int)$cfg["interval_ms"] ?>;
+  var MAX_WIDTH      = <?= (int)$cfg["max_width"] ?>;
+  var SHUFFLE        = true;
+  var RELOAD_LIST_MS = <?= (int)$cfg["reload_list_min"] ?> * 60 * 1000;
 
-  var SHOW_CLOCK   = true;     // clock
-  var SHOW_DATE    = true;     // date
-  var SHOW_WEATHER = true;     // weather (Open-Meteo, no API key needed)
+  var SHOW_CLOCK   = <?= jsbool($cfg["show_clock"]) ?>;
+  var SHOW_DATE    = <?= jsbool($cfg["show_date"]) ?>;
+  var SHOW_WEATHER = <?= jsbool($cfg["show_weather"]) ?>;
 
-  /* Coordinates for the weather (e.g. Berlin). Find yours at latlong.net etc. */
-  var WEATHER_LAT  = 52.52;
-  var WEATHER_LON  = 13.41;
+  var WEATHER_LAT  = <?= json_encode((float)$cfg["weather_lat"]) ?>;
+  var WEATHER_LON  = <?= json_encode((float)$cfg["weather_lon"]) ?>;
+  var WEATHER_CITY = <?= json_encode((string)$cfg["weather_city"]) ?>;
   var WEATHER_MS   = 30 * 60 * 1000;   // refresh every 30 min
 
-  /* Show only one album? -> via URL: index.html?album=Urlaub2023 */
-  /* (or configure permanently as a whitelist in config.php)       */
-
-  /* URL override, e.g. index.html?interval=30000&width=1024&album=Familie */
-  /* =========================================================== */
+  /* URL override, e.g. ?interval=30000&width=1024&album=Familie */
+  /* =================================================================== */
 
   var q = parseQuery();
   if (q.interval) INTERVAL_MS = parseInt(q.interval, 10) || INTERVAL_MS;
@@ -237,7 +239,7 @@
         var info = weatherInfo(d.current.weather_code);
         wSym.innerHTML  = info[0];
         wTemp.innerHTML = t + "°C";
-        wDesc.innerHTML = info[1];
+        wDesc.innerHTML = (WEATHER_CITY ? WEATHER_CITY + " · " : "") + info[1];
         wBox.style.display = "block";
       } catch (e) {}
     };

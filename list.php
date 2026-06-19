@@ -6,6 +6,8 @@
  */
 
 $cfg = require __DIR__ . "/config.php";
+require __DIR__ . "/log.php";
+log_set_max($cfg["log_max_kb"]);
 
 $PHOTO_DIR = $cfg["photo_dir"];
 $RECURSIVE = $cfg["recursive"];
@@ -17,6 +19,7 @@ header("Cache-Control: no-cache");
 
 $base = realpath($PHOTO_DIR);
 if ($base === false || !is_dir($base)) {
+    logweb("list: photo_dir nicht gefunden: " . $PHOTO_DIR);
     echo "[]";
     exit;
 }

@@ -1,24 +1,28 @@
 <?php
 /*
- * sync.php  ->  keeps a size-limited photo cache from the NAS locally.
+ * sync.php  ->  keeps a size-limited photo cache from the source locally.
  *
- * Pure PHP via the Synology FileStation API (HTTP/JSON).
- * Per run:
+ * Only runs for source = "synology" (FileStation API). For source = "local"
+ * it does nothing (the photos are managed by the user; never deleted).
+ *
+ * Per run (synology):
  *   1. delete images that no longer exist on the NAS (optional)
  *   2. if the cache is full: delete the oldest ~refresh_mb (make room)
  *   3. download new random photos until cache_limit_mb is reached
- *
- * The server does NOT know what is currently displayed -- it only makes sure
- * at most cache_limit_mb live locally and fresh ones arrive now and then.
+ *   4. clean up the downscale cache
  *
  * Usage:
  *   php sync.php            -> sync once
  *   php sync.php --loop     -> endless loop, every sync_hours hours
  */
 
-/* ---- configuration centrally from config.php ---- */
 $cfg = require __DIR__ . "/config.php";
+require __DIR__ . "/log.php";
+require __DIR__ . "/nas.php";
 
+log_set_max($cfg["log_max_kb"]);
+
+$SOURCE      = $cfg["source"];
 $NAS_BASE    = $cfg["nas_base"];
 $NAS_USER    = $cfg["nas_user"];
 $NAS_PASS    = $cfg["nas_pass"];
@@ -36,6 +40,12 @@ $KEEP_DAYS   = $cfg["cache_keep_days"];
 date_default_timezone_set("Europe/Berlin");
 $LOOP = in_array("--loop", $argv);
 
+/* source guard: nothing to do for local sources */
+if ($SOURCE !== "synology") {
+    logmsg("Quelle '" . $SOURCE . "' -> kein Sync noetig (Bilder werden lokal verwaltet).");
+    exit(0);
+}
+
 do {
     run_sync();
     if ($LOOP) {
@@ -47,24 +57,24 @@ do {
 
 /* ---------------------- main flow ---------------------- */
 function run_sync() {
-    global $NAS_BASE, $REMOTE_DIR, $REMOTE_SUBS, $LOCAL_DIR, $DELETE_OLD, $CACHE_LIMIT, $REFRESH;
+    global $NAS_BASE, $NAS_USER, $NAS_PASS, $REMOTE_DIR, $REMOTE_SUBS,
+           $LOCAL_DIR, $DELETE_OLD, $CACHE_LIMIT, $REFRESH, $EXT;
 
     logmsg("Login an " . $NAS_BASE . " ...");
-    $sid = nas_login();
-    if (!$sid) { logmsg("FEHLER: Login fehlgeschlagen."); return; }
+    $sid = nas_login($NAS_BASE, $NAS_USER, $NAS_PASS);
+    if (!$sid) { logmsg("FEHLER: Login fehlgeschlagen. " . $GLOBALS["NAS_ERR"]); return; }
 
     if (!is_dir($LOCAL_DIR)) @mkdir($LOCAL_DIR, 0777, true);
 
-    /* NAS catalog: relPath => size. Either the whole remote_dir or only
-       the subfolders listed in remote_subdirs (each recursive). */
+    /* NAS catalog: relPath => size. Whole remote_dir or only listed subfolders. */
     $remote = array();
     if (empty($REMOTE_SUBS)) {
-        nas_walk($sid, $REMOTE_DIR, "", $remote);
+        nas_walk($NAS_BASE, $sid, $REMOTE_DIR, "", $remote, $EXT);
     } else {
         foreach ($REMOTE_SUBS as $sub) {
             $sub = trim($sub, "/");
             if ($sub === "") continue;
-            nas_walk($sid, $REMOTE_DIR . "/" . $sub, $sub, $remote);
+            nas_walk($NAS_BASE, $sid, $REMOTE_DIR . "/" . $sub, $sub, $remote, $EXT);
         }
     }
     logmsg(count($remote) . " Bilder auf der NAS (in " .
@@ -107,7 +117,7 @@ function run_sync() {
         $localFile = $LOCAL_DIR . "/" . $rel;
         $dir = dirname($localFile);
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
-        if (nas_download($sid, $REMOTE_DIR . "/" . $rel, $localFile)) {
+        if (nas_download($NAS_BASE, $sid, $REMOTE_DIR . "/" . $rel, $localFile)) {
             $total += $size; $dlbytes += $size; $dl++;
             logmsg("  + " . $rel);
         }
@@ -118,7 +128,7 @@ function run_sync() {
     /* 4) clean up the downscale cache (files not shown for a long time) */
     prune_cache();
 
-    nas_logout($sid);
+    nas_logout($NAS_BASE, $sid);
     logmsg("Sync fertig.");
 }
 
@@ -145,7 +155,6 @@ function prune_cache() {
 
 /* deletes the oldest local images until $bytes are free; returns freed bytes */
 function evict_oldest(&$local, $base, $bytes) {
-    /* sort by mtime ascending (oldest = downloaded first) */
     uasort($local, function ($a, $b) { return $a["mtime"] - $b["mtime"]; });
     $freed = 0;
     foreach ($local as $rel => $meta) {
@@ -155,90 +164,6 @@ function evict_oldest(&$local, $base, $bytes) {
         unset($local[$rel]);
     }
     return $freed;
-}
-
-
-/* ---------------------- FileStation API ---------------------- */
-function nas_login() {
-    global $NAS_BASE, $NAS_USER, $NAS_PASS, $HTTP_ERR;
-    $url = $NAS_BASE . "/webapi/auth.cgi?api=SYNO.API.Auth&version=3&method=login"
-         . "&account=" . rawurlencode($NAS_USER)
-         . "&passwd="  . rawurlencode($NAS_PASS)
-         . "&session=FileStation&format=sid";
-    $raw = http_get($url);
-    if ($raw === false || $raw === null || $raw === "") {
-        logmsg("  Keine Antwort von der NAS. " . $HTTP_ERR);
-        logmsg("  -> Stimmen IP/Port (NAS_BASE) und ist die Synology erreichbar?");
-        return null;
-    }
-    $r = json_decode($raw, true);
-    if (!is_array($r)) {
-        logmsg("  Antwort nicht als JSON lesbar: " . substr(trim($raw), 0, 200));
-        return null;
-    }
-    if (empty($r["success"])) {
-        $code = isset($r["error"]["code"]) ? $r["error"]["code"] : "?";
-        logmsg("  API-Fehlercode " . $code . " (" . auth_err($code) . ")");
-        return null;
-    }
-    return $r["data"]["sid"];
-}
-
-/* Klartext zu den haeufigsten SYNO.API.Auth-Fehlercodes */
-function auth_err($code) {
-    switch ((int)$code) {
-        case 400: return "Konto oder Passwort falsch";
-        case 401: return "Konto deaktiviert";
-        case 402: return "Berechtigung verweigert";
-        case 403: return "2-Faktor-Code (OTP) erforderlich";
-        case 404: return "2-Faktor-Code falsch";
-        case 406: return "OTP-Erzwingung; App-Passwort noetig";
-        case 119: return "Sitzung/SID ungueltig";
-        default:  return "siehe Synology-API-Doku";
-    }
-}
-
-function nas_logout($sid) {
-    global $NAS_BASE;
-    http_get($NAS_BASE . "/webapi/auth.cgi?api=SYNO.API.Auth&version=1&method=logout"
-           . "&session=FileStation&_sid=" . rawurlencode($sid));
-}
-
-/* lists $path and recurses into subfolders; fills $out[relPath]=size */
-function nas_walk($sid, $path, $prefix, &$out) {
-    global $NAS_BASE, $EXT;
-    $url = $NAS_BASE . "/webapi/entry.cgi?api=SYNO.FileStation.List&version=2&method=list"
-         . "&folder_path=" . rawurlencode($path)
-         . "&additional=" . rawurlencode('["size"]')
-         . "&_sid=" . rawurlencode($sid);
-    $r = json_decode(http_get($url), true);
-    if (!$r || empty($r["success"])) return;
-
-    foreach ($r["data"]["files"] as $f) {
-        $name = $f["name"];
-        $rel  = $prefix === "" ? $name : $prefix . "/" . $name;
-        if (!empty($f["isdir"])) {
-            nas_walk($sid, $path . "/" . $name, $rel, $out);     // subfolder
-        } else if (ext_ok($name, $EXT)) {
-            $out[$rel] = isset($f["additional"]["size"]) ? (int)$f["additional"]["size"] : 0;
-        }
-    }
-}
-
-function nas_download($sid, $remotePath, $localFile) {
-    global $NAS_BASE;
-    $url = $NAS_BASE . "/webapi/entry.cgi?api=SYNO.FileStation.Download&version=2&method=download"
-         . "&path=" . rawurlencode($remotePath)
-         . "&mode=download&_sid=" . rawurlencode($sid);
-    return http_download($url, $localFile);
-}
-
-
-/* ---------------------- helpers ---------------------- */
-function ext_ok($name, $exts) {
-    $dot = strrpos($name, ".");
-    if ($dot === false) return false;
-    return in_array(strtolower(substr($name, $dot + 1)), $exts, true);
 }
 
 /* all local images: relPath => array(mtime, size); excluding .cache */
@@ -252,7 +177,7 @@ function local_images($base) {
         if (!$file->isFile()) continue;
         $rel = str_replace("\\", "/", substr($file->getPathname(), strlen($base) + 1));
         if (strpos($rel, ".cache/") === 0) continue;
-        if (ext_ok($file->getFilename(), $EXT)) {
+        if (nas_ext_ok($file->getFilename(), $EXT)) {
             $out[$rel] = array("mtime" => $file->getMTime(), "size" => $file->getSize());
         }
     }
@@ -260,45 +185,3 @@ function local_images($base) {
 }
 
 function mb($bytes) { return round($bytes / 1048576, 1) . " MB"; }
-
-function http_get($url) {
-    global $HTTP_ERR;
-    $HTTP_ERR = "";
-    if (function_exists("curl_init")) {
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        $body = curl_exec($ch);
-        if ($body === false) {
-            $HTTP_ERR = "curl: " . curl_error($ch)
-                      . " (HTTP " . curl_getinfo($ch, CURLINFO_HTTP_CODE) . ")";
-        }
-        return $body;   // kein curl_close noetig (seit PHP 8.0 wirkungslos)
-    }
-    $body = @file_get_contents($url);
-    if ($body === false) $HTTP_ERR = "file_get_contents fehlgeschlagen (allow_url_fopen?)";
-    return $body;
-}
-
-function http_download($url, $localFile) {
-    if (function_exists("curl_init")) {
-        $fp = fopen($localFile, "wb");
-        if (!$fp) return false;
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_FILE, $fp);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
-        $ok = curl_exec($ch);
-        fclose($fp);
-        if (!$ok) @unlink($localFile);
-        return (bool)$ok;
-    }
-    $data = @file_get_contents($url);
-    if ($data === false) return false;
-    return file_put_contents($localFile, $data) !== false;
-}
-
-function logmsg($m) { echo "[" . date("H:i:s") . "] " . $m . "\n"; }

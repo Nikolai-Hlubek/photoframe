@@ -23,6 +23,43 @@ nachkommen.
 
 ---
 
+## Szenario: alte Hardware wiederverwenden
+
+Die Idee ist, ausgediente Geräte sinnvoll weiterzubetreiben, statt neue
+Hardware zu kaufen. Die Arbeit wird auf drei Rollen verteilt:
+
+- **NAS (Datenspeicher):** hält die große Fotosammlung. Sie muss nichts
+  Besonderes können außer die Bilder bereitstellen.
+- **Altes Telefon (Mini-Server):** läuft dauerhaft in **Termux** und macht die
+  eigentliche Arbeit – Bilder holen/zwischenspeichern, verkleinern und über
+  HTTP ausliefern. Ein Telefon eignet sich gut: stromsparend, hat Speicher und
+  WLAN, kann rund um die Uhr laufen.
+- **Altes Tablet (Kiosk-Display):** zeigt nur noch eine Webseite im Vollbild
+  (Kiosk-Browser). Es braucht keine aktuelle Software – nur einen Browser, der
+  die Diashow-Seite des Telefons öffnet. Genau deshalb läuft die Logik auf dem
+  Telefon und nicht auf dem alten Tablet.
+
+### Quellsysteme
+
+Woher die Bilder kommen, bestimmt die Einstellung `source`:
+
+| Quelle      | Verhalten                                                          |
+|-------------|-------------------------------------------------------------------|
+| `local`     | Bilder liegen bereits im `photo_dir` (kopiert/gemountet). Kein Sync, **nichts wird gelöscht**. |
+| `synology`  | `sync.php` holt per FileStation-API, mit Größenlimit & Rotation.   |
+
+Weitere Quellen (z. B. SMB, Cloud) lassen sich später ergänzen.
+
+### Roadmap (in Arbeit)
+
+- **Management-Interface** auf Port 8081: `.env`, Ordnerliste und alle
+  Einstellungen grafisch konfigurieren, NAS-Verbindung testen, Ordner auswählen.
+- **Zentrale Konfiguration** per Schema (`config.php`) + `settings.json`.
+- **Logging** (`log.php` → `logs/`) für Sync-Läufe, Admin-Änderungen und
+  Web-Fehler, inkl. Anzeige im Management-Interface.
+
+---
+
 ## 1. Voraussetzungen (in Termux)
 
 ```bash
@@ -115,19 +152,26 @@ REMOTE_DIR=/photo                     # Basis-Ordner auf der NAS
 > Tipp: Auf der NAS einen eigenen Benutzer mit **nur Leserecht** auf den
 > Fotoordner anlegen.
 
-### b) Allgemeine Einstellungen – `config.php`
+### b) Allgemeine Einstellungen – Schema & `settings.json`
 
-Die wichtigsten Regler:
+Alle nicht-geheimen Optionen sind in **`config.php`** als **Schema** definiert
+(Schlüssel, Typ, Default, Hilfetext). Geänderte Werte landen in **`settings.json`**
+(gitignored). Am bequemsten stellst du sie im **Management-Interface** ein
+(siehe Abschnitt 5) – dort erscheint jede Schema-Option automatisch.
 
-> NAS-Adresse, -Ordner und -Zugang stehen in der `.env` (siehe oben), nicht hier.
+> Faustregel: `config.php` = *welche* Optionen es gibt (Code). `settings.json` =
+> *deine* Werte. `.env` = Geheimnisse (NAS-Zugang, Ort, Admin-Passwort).
 
-| Schlüssel          | Bedeutung                                                        |
-|--------------------|-----------------------------------------------------------------|
-| `photo_dir`        | lokaler Bilderordner (Standard: `photo/` neben den Skripten)     |
-| `cache_limit_mb`   | maximale Größe des lokalen Caches (z. B. `10000` = 10 GB)        |
-| `refresh_mb`       | wie viel pro Sync-Lauf ausgetauscht wird (älteste raus, neue rein)|
-| `sync_hours`       | Intervall für `php sync.php --loop`                              |
-| `cache_keep_days`  | verwaiste Verkleinerungen im `.cache` nach X Tagen löschen        |
+Wichtige Optionen: `source` (`local`/`synology`), `cache_limit_mb`, `refresh_mb`,
+`sync_hours`, `cache_keep_days`, `interval_ms`, `max_width`, `show_clock/date/weather`.
+
+### Quelle wählen: `synology` oder `local`
+
+- **`synology`** (Default): `sync.php` holt die Bilder von der NAS.
+- **`local`**: Bilder liegen schon im `photo_dir` (kopiert/gemountet). `sync.php`
+  tut dann **nichts** und löscht **nichts** – nur `php -S` läuft.
+
+Umschalten im Management-Interface oder in `settings.json` (`"source": "local"`).
 
 ### c) Welche Ordner – `remote_subdirs.txt` (wird **nicht** eingecheckt)
 
@@ -174,9 +218,30 @@ php -S 0.0.0.0:8080
 
 ```bash
 termux-wake-lock
-php sync.php --loop &        # alle sync_hours automatisch synchronisieren
-php -S 0.0.0.0:8080 &
+php sync.php --loop &             # alle sync_hours automatisch synchronisieren
+php -S 0.0.0.0:8080 &             # Diashow
+php -S 0.0.0.0:8081 -t admin &    # Management-Interface
 ```
+
+### Management-Interface (Port 8081)
+
+Zum grafischen Konfigurieren läuft ein zweiter Server mit Dokumentwurzel
+`admin/`:
+
+```bash
+php -S 0.0.0.0:8081 -t admin
+```
+
+Aufruf im Browser (PC oder Handy): `http://<server-ip>:8081/`
+
+- **Login** per Admin-Passwort (`ADMIN_PASS` in der `.env`). Ist keins gesetzt,
+  läuft die UI ungeschützt und warnt dich – setze dort zuerst ein Passwort.
+- Editierbar: **alle** Schema-Optionen, die `.env`-Felder (NAS-Zugang, Ort) und
+  die Ordnerliste (`remote_subdirs.txt`).
+- Buttons: **Verbindung testen** und **NAS-Ordner durchsuchen** (Ordner per Klick
+  in die Liste übernehmen). Unten werden die letzten **Log-Zeilen** angezeigt.
+
+> Nur im vertrauten LAN betreiben – die UI bearbeitet Zugangsdaten.
 
 ---
 
@@ -194,11 +259,13 @@ sshd
 cd ~/fotoframe
 php sync.php --loop &
 php -S 0.0.0.0:8080 &
+php -S 0.0.0.0:8081 -t admin &
 EOF
 chmod +x ~/.termux/boot/fotorahmen.sh
 ```
 
-Das startet nach jedem Neustart: SSH-Server, NAS-Sync-Schleife und Webserver.
+Das startet nach jedem Neustart: SSH-Server, NAS-Sync-Schleife, Diashow-Server
+und Management-Interface.
 
 ---
 
@@ -214,18 +281,21 @@ derselben URL.
 
 ---
 
-## 8. Anzeige anpassen (`index.html`, oben im `<script>`)
+## 8. Anzeige anpassen
 
-| Variable        | Bedeutung                                        |
+Die Diashow ist **`index.php`** und zieht ihre Werte aus der Konfiguration
+(Schema/`settings.json`/`.env`). Einstellen am besten im **Management-Interface**:
+
+| Option          | Bedeutung                                        |
 |-----------------|--------------------------------------------------|
-| `INTERVAL_MS`   | Anzeigedauer pro Bild (Standard 20 s)            |
-| `MAX_WIDTH`     | serverseitige Verkleinerungsbreite (px)          |
-| `SHOW_CLOCK`    | Uhr ein/aus                                       |
-| `SHOW_DATE`     | Datum ein/aus                                     |
-| `SHOW_WEATHER`  | Wetter ein/aus (Open-Meteo, kein API-Key nötig)  |
-| `WEATHER_LAT` / `WEATHER_LON` | Koordinaten fürs Wetter             |
+| `interval_ms`   | Anzeigedauer pro Bild (Standard 20 s)            |
+| `max_width`     | serverseitige Verkleinerungsbreite (px)          |
+| `show_clock`    | Uhr ein/aus                                       |
+| `show_date`     | Datum ein/aus                                     |
+| `show_weather`  | Wetter ein/aus (Open-Meteo, kein API-Key nötig)  |
+| `weather_lat` / `weather_lon` / `weather_city` | Ort fürs Wetter (in `.env`) |
 
-Per URL überschreibbar, z. B.:
+Einzelne Werte sind auch per URL überschreibbar, z. B.:
 `http://<server-ip>:8080/?interval=30000&album=Urlaub2023`
 
 ---
@@ -234,11 +304,13 @@ Per URL überschreibbar, z. B.:
 
 | Datei                         | Im Git? | Inhalt                          |
 |-------------------------------|---------|---------------------------------|
-| `.env`                        | nein    | NAS-Zugangsdaten                |
+| `.env`                        | nein    | NAS-Zugang, Ort, Admin-Passwort |
+| `settings.json`               | nein    | per UI geänderte Einstellungen  |
 | `remote_subdirs.txt`          | nein    | gewählte Ordner                 |
+| `logs/`                       | nein    | Logdateien                      |
 | `photo/`                      | nein    | heruntergeladene Bilder + Cache |
 | `*.example`                   | ja      | Vorlagen                        |
-| `config.php`, `*.php`, `index.html` | ja | Code (ohne Geheimnisse)         |
+| `config.php`, `schema.php`, `nas.php`, `log.php`, `store.php`, `index.php`, `admin/` | ja | Code (ohne Geheimnisse) |
 
 ---
 
@@ -253,4 +325,6 @@ Per URL überschreibbar, z. B.:
 | `sync.php`: „Login fehlgeschlagen"        | `.env`-Daten falsch, oder `nas_base`-Port stimmt nicht.      |
 | Keine Bilder aus einem Ordner             | Schreibweise in `remote_subdirs.txt` ≠ NAS (Groß/Klein, Leerzeichen). |
 | Bilder werden nicht verkleinert           | `gd` fehlt → `pkg install php-gd` (siehe Schritt 1). Läuft sonst unkomprimiert. |
+| `sync.php` sagt „kein Sync nötig"         | `source` steht auf `local`. Für NAS-Abgleich `source=synology` setzen. |
+| Admin-UI: keine Anmeldung möglich         | `ADMIN_PASS` in `.env` prüfen; leer = ungeschützt (dann Passwort setzen). |
 | Telefon-Display geht aus                  | `termux-wake-lock` und in Fully Kiosk *Keep Screen On*.       |

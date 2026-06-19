@@ -1,10 +1,14 @@
 <?php
 /*
- * config.php  ->  central configuration for the photo frame.
+ * config.php  ->  builds the effective configuration.
  *
- * Read by list.php, img.php and sync.php.
- * Secrets (NAS user/password) do NOT live here but in .env
- * (see .env.example). The .env is not checked in.
+ * Sources, in increasing priority:
+ *   1. defaults from schema.php
+ *   2. settings.json   (non-secret values, edited via the admin UI)
+ *   3. .env            (secrets: NAS access, admin password, location)
+ *
+ * Read by list.php, img.php, index.php, sync.php and admin/.
+ * Returns a plain array, so existing code keeps using $cfg["key"].
  */
 
 /* --- small .env loader (KEY=VALUE per line, # = comment) --- */
@@ -19,7 +23,6 @@ if (!function_exists("load_env")) {
             if ($pos === false) continue;
             $key = trim(substr($line, 0, $pos));
             $val = trim(substr($line, $pos + 1));
-            // strip surrounding quotes
             if (strlen($val) >= 2 &&
                 (($val[0] === '"' && substr($val, -1) === '"') ||
                  ($val[0] === "'" && substr($val, -1) === "'"))) {
@@ -45,46 +48,55 @@ if (!function_exists("load_lines")) {
     }
 }
 
-$env = load_env(__DIR__ . "/.env");
+/* --- settings.json -> array --- */
+if (!function_exists("load_settings")) {
+    function load_settings($path) {
+        if (!is_file($path)) return array();
+        $j = json_decode(file_get_contents($path), true);
+        return is_array($j) ? $j : array();
+    }
+}
 
-return array(
+/* --- coerce a stored value to the schema type --- */
+if (!function_exists("cfg_coerce")) {
+    function cfg_coerce($val, $type) {
+        switch ($type) {
+            case "int":   return (int)$val;
+            case "float": return (float)$val;
+            case "bool":
+                if (is_bool($val)) return $val;
+                return in_array(strtolower((string)$val), array("1","true","yes","on","ja"), true);
+            case "list":
+                if (is_array($val)) {
+                    return array_values(array_filter(array_map("trim", $val), "strlen"));
+                }
+                $parts = preg_split('/[,\r\n]+/', (string)$val);
+                return array_values(array_filter(array_map("trim", $parts), "strlen"));
+            default:      return (string)$val;
+        }
+    }
+}
 
-    /* ---------- Paths (used by all scripts) ---------- */
-    // Folder with the images. __DIR__ = folder of this config.php.
-    "photo_dir"   => __DIR__ . "/photo",
-    // Cache for downscaled images (must be writable).
-    "cache_dir"   => __DIR__ . "/photo/.cache",
+$schema   = require __DIR__ . "/schema.php";
+$env      = load_env(__DIR__ . "/.env");
+$settings = load_settings(__DIR__ . "/settings.json");
 
-    /* ---------- Display / listing (list.php) ---------- */
-    "recursive"   => true,                                   // include subfolders?
-    "extensions"  => array("jpg","jpeg","png","gif","webp","bmp"),
-    // Album whitelist (top-level subfolders). Empty = all.
-    // Example: array("Urlaub2023", "Familie")
-    "albums"      => array(),
+$cfg = array();
+foreach ($schema as $f) {
+    $key = $f["key"];
+    $val = $f["default"];
+    if ($f["store"] === "env") {
+        $ek = $f["env"];
+        if (isset($env[$ek]) && $env[$ek] !== "") $val = $env[$ek];
+    } else {
+        if (array_key_exists($key, $settings) && $settings[$key] !== "") $val = $settings[$key];
+    }
+    $cfg[$key] = cfg_coerce($val, $f["type"]);
+}
 
-    /* ---------- Image delivery (img.php) ---------- */
-    "jpeg_quality"=> 82,                                     // 0..100
+/* derived / file-based values */
+if (empty($cfg["photo_dir"])) $cfg["photo_dir"] = __DIR__ . "/photo";
+$cfg["cache_dir"]      = $cfg["photo_dir"] . "/.cache";
+$cfg["remote_subdirs"] = load_lines(__DIR__ . "/remote_subdirs.txt");
 
-    /* ---------- Local cache / rotation (sync.php) ---------- */
-    // Maximum size of locally kept images in MB. If the NAS folder is
-    // larger, only a slice is kept and swapped out over time.
-    "cache_limit_mb"  => 10000,
-    // How much is swapped per sync run: delete this many MB of the oldest
-    // images and replace them with new random photos.
-    "refresh_mb"      => 500,
-    // Downscale cache (photo/.cache): delete files not shown for this many
-    // days. 0 = never clean up.
-    "cache_keep_days" => 7,
-
-    /* ---------- NAS sync (sync.php) -- address/credentials from .env ---------- */
-    "nas_base"    => isset($env["NAS_BASE"]) ? $env["NAS_BASE"] : "",        // <-- from .env
-    "nas_user"    => isset($env["NAS_USER"]) ? $env["NAS_USER"] : "",        // <-- from .env
-    "nas_pass"    => isset($env["NAS_PASS"]) ? $env["NAS_PASS"] : "",        // <-- from .env
-    "remote_dir"  => isset($env["REMOTE_DIR"]) ? $env["REMOTE_DIR"] : "/photo", // <-- from .env
-    // The list of subfolders to include lives in remote_subdirs.txt
-    // (not checked in). One line = one folder, each recursive.
-    // File missing/empty = take the whole remote_dir.
-    "remote_subdirs" => load_lines(__DIR__ . "/remote_subdirs.txt"),
-    "sync_hours"  => 24,                                      // interval for "php sync.php --loop"
-    "delete_old"  => true,                                   // delete locally what is gone on the NAS?
-);
+return $cfg;

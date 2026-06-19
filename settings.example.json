@@ -1,0 +1,22 @@
+{
+  "_hinweis": "Vorlage. Die echte settings.json wird per Admin-UI erzeugt und ist gitignored. Werte hier sind die Standardwerte; weglassen = Default aus schema.php.",
+  "source": "synology",
+  "show_clock": true,
+  "show_date": true,
+  "show_weather": true,
+  "interval_ms": 20000,
+  "max_width": 1280,
+  "reload_list_min": 60,
+  "photo_dir": "",
+  "recursive": true,
+  "extensions": ["jpg", "jpeg", "png", "gif", "webp", "bmp"],
+  "albums": [],
+  "jpeg_quality": 82,
+  "cache_limit_mb": 10000,
+  "refresh_mb": 500,
+  "cache_keep_days": 7,
+  "sync_hours": 24,
+  "delete_old": true,
+  "log_level": "info",
+  "log_max_kb": 512
+}
