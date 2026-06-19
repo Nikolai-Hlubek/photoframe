@@ -69,6 +69,10 @@ return array(
     array("key"=>"ui_scale", "label"=>"Schriftgroesse Overlays (x)", "group"=>"Anzeige",
           "help"=>"Multiplikator fuer Uhr/Datum/Wetter. 1.0 = Standard, 1.5 = groesser.",
           "type"=>"float", "default"=>1.0, "store"=>"settings"),
+    array("key"=>"image_fit", "label"=>"Bildanpassung", "group"=>"Anzeige",
+          "help"=>"contain = ganzes Bild (schwarze Raender), cover = formatfuellend (beschnitten), blur = Raender unscharf fuellen.",
+          "type"=>"select", "options"=>array("blur","contain","cover"),
+          "default"=>"blur", "store"=>"settings"),
 
     /* ---------- Cache / sync ---------- */
     array("key"=>"photo_dir", "label"=>"Bilderordner", "group"=>"Cache/Sync",

@@ -3,6 +3,9 @@
  * (which reads schema defaults + settings.json + .env). */
 $cfg = require __DIR__ . "/config.php";
 function jsbool($b) { return $b ? "true" : "false"; }
+$fit    = $cfg["image_fit"];                       // blur | contain | cover
+$fgsize = ($fit === "cover") ? "cover" : "contain";
+$showbg = ($fit === "blur");
 ?><!DOCTYPE html>
 <html lang="de">
 <head>
@@ -21,21 +24,35 @@ function jsbool($b) { return $b ? "true" : "false"; }
     overflow: hidden;
     cursor: none;
   }
-  /* Two stacked layers for the crossfade */
+  /* Two stacked layers for the crossfade; each has a (blurred) bg + the fg image */
   .layer {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background-position: center center;
-    background-repeat: no-repeat;
-    background-size: contain;          /* show whole image; "cover" = fill the frame */
     opacity: 0;
     -webkit-transition: opacity 1.5s ease-in-out;
     transition: opacity 1.5s ease-in-out;
   }
   .layer.visible { opacity: 1; }
+  .layer .bg, .layer .fg {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-position: center center;
+    background-repeat: no-repeat;
+  }
+  .layer .bg {                          /* blurred fill behind the photo */
+    background-size: cover;
+    -webkit-filter: blur(2.2vmin) brightness(0.55);
+    filter: blur(2.2vmin) brightness(0.55);
+    -webkit-transform: scale(1.12);
+    transform: scale(1.12);
+    display: <?= $showbg ? "block" : "none" ?>;
+  }
+  .layer .fg {                          /* the actual photo */
+    background-size: <?= $fgsize ?>;    /* contain | cover */
+  }
 
   #message {
     position: absolute;
@@ -72,8 +89,8 @@ function jsbool($b) { return $b ? "true" : "false"; }
 </style>
 </head>
 <body>
-  <div id="a" class="layer"></div>
-  <div id="b" class="layer"></div>
+  <div id="a" class="layer"><div class="bg"></div><div class="fg"></div></div>
+  <div id="b" class="layer"><div class="bg"></div><div class="fg"></div></div>
   <div id="message">Lade Bilder &hellip;</div>
 
   <div id="datetime" class="overlay">
@@ -112,7 +129,11 @@ function jsbool($b) { return $b ? "true" : "false"; }
   if (q.interval) INTERVAL_MS = parseInt(q.interval, 10) || INTERVAL_MS;
   if (q.width)    MAX_WIDTH   = parseInt(q.width, 10);
 
-  var layers  = [document.getElementById("a"), document.getElementById("b")];
+  var aEl = document.getElementById("a"), bEl = document.getElementById("b");
+  var layers = [aEl, bEl];
+  var fgs = [aEl.getElementsByClassName("fg")[0], bEl.getElementsByClassName("fg")[0]];
+  var bgs = [aEl.getElementsByClassName("bg")[0], bEl.getElementsByClassName("bg")[0]];
+  var FIT = <?= json_encode($fit) ?>;
   var front   = 0;            // currently visible layer
   var images  = [];          // list of image paths (relative)
   var idx     = 0;
@@ -181,7 +202,9 @@ function jsbool($b) { return $b ? "true" : "false"; }
     var img = new Image();
     img.onload = function () {
       var back = 1 - front;
-      layers[back].style.backgroundImage = "url('" + imageUrl(path).replace(/'/g, "%27") + "')";
+      var u = "url('" + imageUrl(path).replace(/'/g, "%27") + "')";
+      fgs[back].style.backgroundImage = u;
+      if (FIT === "blur") bgs[back].style.backgroundImage = u;
       layers[back].className = "layer visible";
       layers[front].className = "layer";
       front = back;
