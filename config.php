@@ -21,12 +21,19 @@ if (!function_exists("load_env")) {
             if ($line === "" || $line[0] === "#") continue;
             $pos = strpos($line, "=");
             if ($pos === false) continue;
-            $key = trim(substr($line, 0, $pos));
-            $val = trim(substr($line, $pos + 1));
-            if (strlen($val) >= 2 &&
-                (($val[0] === '"' && substr($val, -1) === '"') ||
-                 ($val[0] === "'" && substr($val, -1) === "'"))) {
-                $val = substr($val, 1, -1);
+            $key  = trim(substr($line, 0, $pos));
+            $val  = substr($line, $pos + 1);
+            $lead = ltrim($val);
+            if ($lead !== "" && ($lead[0] === '"' || $lead[0] === "'")) {
+                // quoted value: take between first and last quote (ignores trailing comment)
+                $q = $lead[0];
+                $t = trim($val);
+                $end = strrpos($t, $q);
+                $val = ($end > 0) ? substr($t, 1, $end - 1) : trim($t, $q);
+            } else {
+                // unquoted: strip an inline comment ("<space>#...") then trim
+                $val = preg_replace('/\s+#.*$/', '', $val);
+                $val = trim($val);
             }
             $env[$key] = $val;
         }
