@@ -10,5 +10,8 @@ settings.json
 # Logs
 /logs/
 
+# Laufzeit-PIDs
+/.run/
+
 # Heruntergeladene Fotos und Verkleinerungs-Cache
 /photo/

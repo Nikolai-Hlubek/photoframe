@@ -214,7 +214,19 @@ php -S 0.0.0.0:8080
 - Im Browser testen: `http://<server-ip>:8080/list.php` sollte eine JSON-Liste
   zeigen, `http://<server-ip>:8080/` die Diashow.
 
-### Beides zusammen (im Hintergrund, mit Bildschirm-Wachhalten)
+### Alles zusammen mit den Skripten (empfohlen)
+
+```bash
+chmod +x start.sh stop.sh status.sh   # einmalig
+./start.sh     # Wake-Lock + Sync-Schleife + Diashow (8080) + Admin (8081)
+./status.sh    # zeigt, was läuft
+./stop.sh      # alles wieder herunterfahren
+```
+
+`start.sh` merkt sich die PIDs in `.run/`, schreibt Ausgaben nach `logs/*.out`
+und verhindert einen Doppelstart.
+
+### Oder einzeln im Hintergrund
 
 ```bash
 termux-wake-lock
@@ -254,18 +266,14 @@ ein Startskript anlegen:
 mkdir -p ~/.termux/boot
 cat > ~/.termux/boot/fotorahmen.sh <<'EOF'
 #!/data/data/com.termux/files/usr/bin/sh
-termux-wake-lock
 sshd
-cd ~/fotoframe
-php sync.php --loop &
-php -S 0.0.0.0:8080 &
-php -S 0.0.0.0:8081 -t admin &
+~/fotoframe/start.sh
 EOF
 chmod +x ~/.termux/boot/fotorahmen.sh
 ```
 
-Das startet nach jedem Neustart: SSH-Server, NAS-Sync-Schleife, Diashow-Server
-und Management-Interface.
+`start.sh` übernimmt Wake-Lock, Sync-Schleife, Diashow- und Admin-Server. Passe
+den Pfad `~/fotoframe` an deinen Projektordner an (z. B. `~/photoframe`).
 
 ---
 
