@@ -1,213 +1,184 @@
-# Fotorahmen
+# photoframe — a self-hosted digital photo frame
 
-Ein schlanker Foto-Rahmen für ein altes Wandtablet: Ein kleiner PHP-Server
-(läuft z. B. in **Termux** auf einem Telefon) hält einen größenbegrenzten
-Foto-Cache von einer **Synology-NAS** vor und zeigt die Bilder als Diashow im
-Browser des Tablets.
+photoframe turns spare hardware into a wall photo frame. A small set of PHP
+scripts runs on an always-on device (for example an old Android phone via
+Termux), keeps a local copy of your photos, and serves a full-screen slideshow
+that any browser can display. Photos come from a Synology NAS or from a local
+folder. Everything runs inside your own network; there is no cloud service and
+no account.
 
 ```mermaid
 flowchart LR
-    subgraph SRC["Quelle"]
-        NAS[("Synology NAS<br/>Fotosammlung")]
-        LOC["Lokaler Ordner<br/>(Bilder liegen schon da)"]
-    end
-
-    subgraph PHONE["Altes Telefon · Termux / PHP (Server)"]
-        SYNC["sync.php<br/>Abgleich + Cache-Limit"]
-        CACHE[("photo/<br/>lokaler Foto-Cache")]
-        WEB["Foto-Webseite :8080<br/>index.php · list.php · img.php"]
-        ADMIN["Management-Webseite :8081<br/>admin/"]
-        CFG["Konfiguration<br/>config.php · schema.php<br/>settings.json · .env"]
-        LOG["log.php → logs/"]
-    end
-
-    TABLET["Altes Tablet<br/>Kiosk-Browser · Diashow im Vollbild"]
-    PC["Admin-Browser<br/>PC oder Handy"]
-
-    NAS -->|FileStation-API| SYNC
-    LOC -.->|kein Sync| CACHE
-    SYNC --> CACHE
-    CACHE --> WEB
-    WEB -->|"Bilder + Liste (HTTP)"| TABLET
-    PC -->|konfigurieren| ADMIN
-    ADMIN -->|schreibt| CFG
-    ADMIN -.->|testet / durchsucht| NAS
-    CFG -.->|liest| SYNC
-    CFG -.->|liest| WEB
-    SYNC --> LOG
-    WEB --> LOG
-    ADMIN --> LOG
+    NAS[(Synology NAS)] -->|sync| SERVER
+    LOCAL[Local folder] -.->|no sync| SERVER
+    SERVER["Server device — PHP<br/>slideshow :8080 · admin :8081"] -->|HTTP| TABLET[Tablet<br/>kiosk browser]
+    ADMIN[Admin browser] -->|configure| SERVER
 ```
 
-**Ablauf:** Die **NAS** liefert die Fotos. Das **alte Telefon** (Server) gleicht
-sie per Sync in einen größenbegrenzten lokalen Cache ab und stellt zwei Webseiten
-bereit: die **Foto-Webseite** (Port 8080) für das Tablet und die
-**Management-Webseite** (Port 8081) zum Konfigurieren. Das **alte Tablet** zeigt
-nur die Foto-Webseite im Vollbild an.
+## How it works
 
-Der Server weiß nicht, was gerade angezeigt wird. Er sorgt nur dafür, dass
-lokal höchstens `cache_limit_mb` an Fotos liegen und ab und zu frische
-nachkommen.
+The work is split across three roles:
+
+- **Source** — where the photos live: a Synology NAS, or a local folder on the
+  server device.
+- **Server device** — runs the PHP scripts. With a NAS source it syncs photos
+  into a size-limited local cache; it then serves a slideshow page (port 8080)
+  and a management page (port 8081).
+- **Display device** — a tablet (or any screen) running a browser in kiosk mode,
+  pointed at the slideshow page.
+
+The server only maintains the local photo set and answers HTTP requests; it does
+not push anything. Image requests happen only while a browser has the slideshow
+open.
+
+## Features
+
+- **Two sources:** pull from a **Synology NAS** (FileStation API) or serve a
+  **local folder**. With a local source nothing is downloaded or deleted.
+- **Size-limited cache with rotation** (NAS source): downloads new random
+  photos up to a configurable limit and evicts the oldest to make room; can also
+  remove local files that no longer exist on the NAS.
+- **Folder selection:** restrict the sync to chosen NAS sub-folders; an
+  additional album filter limits what is shown.
+- **Server-side downscaling** via PHP-GD, cached on disk, with EXIF rotation.
+  Falls back to serving originals when GD is not available.
+- **Slideshow:** cross-fade transitions, shuffled order, configurable interval.
+  Fit modes `blur` (blurred fill behind the photo), `contain`, or `cover`.
+- **Overlays:** clock, date, and current weather (Open-Meteo, no API key).
+  Overlay text scales with screen size and has an adjustable factor.
+- **Web management UI** on a separate port, password-protected. The form is
+  generated from the configuration schema, so every option is editable. It can
+  test the NAS connection, browse NAS folders, and show recent log lines.
+- **Schema-driven configuration:** defaults live in code (`schema.php`), edited
+  values in `settings.json`, secrets in `.env`.
+- **File logging** with size-based rotation.
+- **Helper scripts** to start, stop, and check all processes; optional autostart
+  on Termux.
+
+> The on-screen text (weekday and month names, weather words) is currently in
+> German; see [Display options](#display-options).
+
+## Requirements
+
+- A device that runs PHP continuously. These instructions use **Termux** on
+  Android, but any PHP-capable host works.
+- PHP with the **gd** and **exif** extensions (for downscaling and rotation).
+  Without gd the originals are served instead.
+- A display device with a browser for the slideshow.
+- Optional: a Synology NAS reachable over the LAN (only for the `synology`
+  source).
 
 ---
 
-## Szenario: alte Hardware wiederverwenden
-
-Die Idee ist, ausgediente Geräte sinnvoll weiterzubetreiben, statt neue
-Hardware zu kaufen. Die Arbeit wird auf drei Rollen verteilt:
-
-- **NAS (Datenspeicher):** hält die große Fotosammlung. Sie muss nichts
-  Besonderes können außer die Bilder bereitstellen.
-- **Altes Telefon (Mini-Server):** läuft dauerhaft in **Termux** und macht die
-  eigentliche Arbeit – Bilder holen/zwischenspeichern, verkleinern und über
-  HTTP ausliefern. Ein Telefon eignet sich gut: stromsparend, hat Speicher und
-  WLAN, kann rund um die Uhr laufen.
-- **Altes Tablet (Kiosk-Display):** zeigt nur noch eine Webseite im Vollbild
-  (Kiosk-Browser). Es braucht keine aktuelle Software – nur einen Browser, der
-  die Diashow-Seite des Telefons öffnet. Genau deshalb läuft die Logik auf dem
-  Telefon und nicht auf dem alten Tablet.
-
-### Quellsysteme
-
-Woher die Bilder kommen, bestimmt die Einstellung `source`:
-
-| Quelle      | Verhalten                                                          |
-|-------------|-------------------------------------------------------------------|
-| `local`     | Bilder liegen bereits im `photo_dir` (kopiert/gemountet). Kein Sync, **nichts wird gelöscht**. |
-| `synology`  | `sync.php` holt per FileStation-API, mit Größenlimit & Rotation.   |
-
-Weitere Quellen (z. B. SMB, Cloud) lassen sich später ergänzen.
-
-### Roadmap (in Arbeit)
-
-- **Management-Interface** auf Port 8081: `.env`, Ordnerliste und alle
-  Einstellungen grafisch konfigurieren, NAS-Verbindung testen, Ordner auswählen.
-- **Zentrale Konfiguration** per Schema (`config.php`) + `settings.json`.
-- **Logging** (`log.php` → `logs/`) für Sync-Läufe, Admin-Änderungen und
-  Web-Fehler, inkl. Anzeige im Management-Interface.
-
----
-
-## 1. Voraussetzungen (in Termux)
+## 1. Install dependencies (Termux)
 
 ```bash
 pkg update && pkg upgrade
 pkg install php php-gd openssh git
-termux-setup-storage        # einmalig: Zugriff auf den Telefon-Speicher
+termux-setup-storage        # one-time: grant access to phone storage
 ```
 
-Die `gd`-Erweiterung (für das serverseitige Verkleinern) steckt in Termux im
-**eigenen Paket `php-gd`** – ohne das fehlt sie. Prüfen:
+Check that downscaling support is present:
 
 ```bash
 php -m | grep -iE 'gd|exif'
 ```
 
-- `gd` vorhanden → optimal.
-- `gd` fehlt → `pkg install php-gd` nachholen. Notfalls läuft es auch ohne:
-  `img.php` liefert dann die Originalbilder aus und das Tablet skaliert per CSS
-  (auf schwachen Geräten ist `gd` aber schonender).
+If `gd` is missing, install `php-gd`. The app still works without it, but serves
+full-size originals.
 
----
+## 2. Access from a PC over SSH (optional)
 
-## 2. Zugriff vom PC per SSH / PuTTY
-
-Damit man bequem vom Rechner aus arbeiten kann, startet man in Termux den
-SSH-Server:
+Convenient for editing files from a computer.
 
 ```bash
-passwd            # einmalig ein Passwort für den Termux-Benutzer setzen
-whoami            # Benutzername merken (z. B. u0_a123)
-sshd              # SSH-Server starten (Port 8022)
+passwd            # set a password for the Termux user (once)
+whoami            # note the user name
+sshd              # start the SSH server (port 8022)
 ```
 
-In **PuTTY** verbinden:
+Connect with an SSH client to `<phone-ip>` on port **8022** using that user name.
+`sshd` must be started again after a reboot (the autostart script handles this).
 
-- **Host**: `<telefon-ip>`  (in Termux per `ifconfig` herausfinden)
-- **Port**: `8022`
-- **Login**: der Name aus `whoami`, dann das gesetzte Passwort
-
-> `sshd` muss nach einem Neustart erneut gestartet werden (oder per Termux:Boot,
-> siehe Abschnitt 6).
-
----
-
-## 3. Projekt von GitHub klonen (per SSH-Key)
-
-### a) SSH-Key auf dem Telefon erzeugen
-
-```bash
-ssh-keygen -t ed25519 -C "fotorahmen@telefon"
-# Enter für Standardpfad, optional Passphrase
-cat ~/.ssh/id_ed25519.pub
-```
-
-### b) Key bei GitHub hinterlegen
-
-Den ausgegebenen `ssh-ed25519 …`-Text kopieren und in GitHub eintragen:
-**Settings → SSH and GPG keys → New SSH key**.
-
-### c) Klonen
+## 3. Get the code
 
 ```bash
 cd ~
-git clone git@github.com:<DEIN-USER>/<DEIN-REPO>.git fotoframe
-cd fotoframe
+git clone <repository-url> photoframe
+cd photoframe
 ```
 
-> Spätere Updates einfach mit `git pull`. Die nicht eingecheckten Dateien
-> (`.env`, `remote_subdirs.txt`, `photo/`) bleiben dabei unangetastet.
+To clone over SSH, create a key and add the public part to your Git host:
 
----
+```bash
+ssh-keygen -t ed25519 -C "photoframe"
+cat ~/.ssh/id_ed25519.pub
+```
 
-## 4. Konfiguration
+Later updates: `git pull`. The non-committed files (`.env`, `settings.json`,
+`remote_subdirs.txt`, `photo/`, `logs/`) are left untouched.
 
-### a) Zugangsdaten – `.env` (wird **nicht** eingecheckt)
+## 4. Configuration
+
+### Secrets and location — `.env` (not committed)
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` bearbeiten (z. B. mit `nano .env`):
+Edit `.env`:
 
 ```
-NAS_USER=dein_nas_benutzer
-NAS_PASS=dein_passwort
-NAS_BASE=http://192.168.1.10:5000     # NAS-IP + Port (5000 http / 5001 https)
-REMOTE_DIR=/photo                     # Basis-Ordner auf der NAS
+NAS_USER=your_nas_user
+NAS_PASS=your_password
+NAS_BASE=http://192.168.1.10:5000     # NAS IP + port (5000 http / 5001 https)
+REMOTE_DIR=/photo                     # base folder on the NAS
+WEATHER_LAT=52.52
+WEATHER_LON=13.41
+WEATHER_CITY=                         # optional label
+ADMIN_PASS=                           # management UI password (empty = unprotected)
 ```
 
-> Tipp: Auf der NAS einen eigenen Benutzer mit **nur Leserecht** auf den
-> Fotoordner anlegen.
+For a NAS source, create a dedicated user with **read-only** access to the photo
+folder. Inline `# comments` after a value are supported.
 
-### b) Allgemeine Einstellungen – Schema & `settings.json`
+### General settings — schema and `settings.json`
 
-Alle nicht-geheimen Optionen sind in **`config.php`** als **Schema** definiert
-(Schlüssel, Typ, Default, Hilfetext). Geänderte Werte landen in **`settings.json`**
-(gitignored). Am bequemsten stellst du sie im **Management-Interface** ein
-(siehe Abschnitt 5) – dort erscheint jede Schema-Option automatisch.
+All non-secret options are defined as a **schema** in `config.php` (key, type,
+default, help text). Changed values are stored in **`settings.json`** (not
+committed). The effective configuration is: schema defaults, overridden by
+`settings.json`, overridden by `.env`.
 
-> Faustregel: `config.php` = *welche* Optionen es gibt (Code). `settings.json` =
-> *deine* Werte. `.env` = Geheimnisse (NAS-Zugang, Ort, Admin-Passwort).
+The simplest way to change settings is the [management interface](#management-interface);
+every schema option appears there automatically. Important options:
 
-Wichtige Optionen: `source` (`local`/`synology`), `cache_limit_mb`, `refresh_mb`,
-`sync_hours`, `cache_keep_days`, `interval_ms`, `max_width`, `show_clock/date/weather`.
+| Option            | Meaning                                                       |
+|-------------------|--------------------------------------------------------------|
+| `source`          | `synology` or `local`                                        |
+| `cache_limit_mb`  | maximum size of the local photo cache                        |
+| `refresh_mb`      | how much is swapped per sync run (evict oldest, fetch new)   |
+| `sync_hours`      | interval for `php sync.php --loop`                           |
+| `cache_keep_days` | drop unused downscaled files after N days                    |
+| `interval_ms`     | display time per image                                       |
+| `max_width`       | server-side downscale width (0 = original)                   |
+| `image_fit`       | `blur`, `contain`, or `cover`                                |
+| `ui_scale`        | overlay font size multiplier                                 |
+| `show_clock` / `show_date` / `show_weather` | enable the overlays                |
 
-### Quelle wählen: `synology` oder `local`
+### Source: `synology` or `local`
 
-- **`synology`** (Default): `sync.php` holt die Bilder von der NAS.
-- **`local`**: Bilder liegen schon im `photo_dir` (kopiert/gemountet). `sync.php`
-  tut dann **nichts** und löscht **nichts** – nur `php -S` läuft.
+- **`synology`** (default): `sync.php` downloads photos from the NAS into the
+  local cache with the size limit and rotation.
+- **`local`**: photos already sit in `photo_dir` (copied or mounted). `sync.php`
+  does nothing and deletes nothing — only the web servers run.
 
-Umschalten im Management-Interface oder in `settings.json` (`"source": "local"`).
-
-### c) Welche Ordner – `remote_subdirs.txt` (wird **nicht** eingecheckt)
+### Which folders — `remote_subdirs.txt` (not committed)
 
 ```bash
 cp remote_subdirs.txt.example remote_subdirs.txt
 ```
 
-Ein Ordner pro Zeile (unter `remote_dir`, jeweils rekursiv), `#` = Kommentar:
+One folder per line, relative to `remote_dir`, each recursive; `#` is a comment:
 
 ```
 Urlaub2023
@@ -215,152 +186,117 @@ Familie
 Familie/Familienleben - 2025
 ```
 
-- **Leer oder nur Kommentare → alle Ordner** unter `remote_dir`.
-- Leerzeichen in Ordnernamen sind erlaubt; Schreibweise muss exakt der NAS
-  entsprechen.
+Empty or comments only means all folders under `remote_dir`. Spaces in names are
+allowed; the spelling must match the NAS exactly.
 
----
+## 5. Run
 
-## 5. Fotos holen & Server starten
-
-Fotos einmal testweise holen:
+### With the helper scripts (recommended)
 
 ```bash
-php sync.php
+chmod +x start.sh stop.sh status.sh   # once
+./start.sh     # wake-lock + sync loop + slideshow (8080) + admin (8081)
+./status.sh    # show what is running
+./stop.sh      # stop everything
 ```
 
-Es loggt jede Aktion (`+ geladen`, `- gelöscht`, Cache-Stand in MB). Der erste
-Lauf füllt den Cache bis `cache_limit_mb` – das kann je nach Limit etwas dauern.
+`start.sh` records PIDs in `.run/`, writes output to `logs/*.out`, and refuses to
+start twice.
 
-Server starten:
+### Manually
 
 ```bash
-php -S 0.0.0.0:8080
+php sync.php                       # sync once (synology source)
+php -S 0.0.0.0:8080                # slideshow
+php -S 0.0.0.0:8081 -t admin       # management interface
 ```
 
-- `0.0.0.0` = im ganzen LAN erreichbar (nicht nur lokal).
-- Im Browser testen: `http://<server-ip>:8080/list.php` sollte eine JSON-Liste
-  zeigen, `http://<server-ip>:8080/` die Diashow.
+- Slideshow: `http://<server-ip>:8080/`
+- `http://<server-ip>:8080/list.php` returns the JSON list of local images.
+- `php sync.php --loop` keeps syncing every `sync_hours`.
 
-### Alles zusammen mit den Skripten (empfohlen)
+## Management interface
 
-```bash
-chmod +x start.sh stop.sh status.sh   # einmalig
-./start.sh     # Wake-Lock + Sync-Schleife + Diashow (8080) + Admin (8081)
-./status.sh    # zeigt, was läuft
-./stop.sh      # alles wieder herunterfahren
-```
-
-`start.sh` merkt sich die PIDs in `.run/`, schreibt Ausgaben nach `logs/*.out`
-und verhindert einen Doppelstart.
-
-### Oder einzeln im Hintergrund
-
-```bash
-termux-wake-lock
-php sync.php --loop &             # alle sync_hours automatisch synchronisieren
-php -S 0.0.0.0:8080 &             # Diashow
-php -S 0.0.0.0:8081 -t admin &    # Management-Interface
-```
-
-### Management-Interface (Port 8081)
-
-Zum grafischen Konfigurieren läuft ein zweiter Server mit Dokumentwurzel
-`admin/`:
+Runs as a second server with `admin/` as its document root:
 
 ```bash
 php -S 0.0.0.0:8081 -t admin
 ```
 
-Aufruf im Browser (PC oder Handy): `http://<server-ip>:8081/`
+Open `http://<server-ip>:8081/` from any browser.
 
-- **Login** per Admin-Passwort (`ADMIN_PASS` in der `.env`). Ist keins gesetzt,
-  läuft die UI ungeschützt und warnt dich – setze dort zuerst ein Passwort.
-- Editierbar: **alle** Schema-Optionen, die `.env`-Felder (NAS-Zugang, Ort) und
-  die Ordnerliste (`remote_subdirs.txt`).
-- Buttons: **Verbindung testen** und **NAS-Ordner durchsuchen** (Ordner per Klick
-  in die Liste übernehmen). Unten werden die letzten **Log-Zeilen** angezeigt.
+- Login with `ADMIN_PASS` from `.env`. If it is empty the UI is unprotected and
+  warns you — set a password there first.
+- Edits all schema options, the `.env` fields, and `remote_subdirs.txt`.
+- Buttons to **test the NAS connection** and **browse NAS folders** (click to add
+  a folder to the list). Recent **log lines** are shown at the bottom.
 
-> Nur im vertrauten LAN betreiben – die UI bearbeitet Zugangsdaten.
+Run it on a trusted LAN only; it edits credentials.
 
----
+## Tablet / kiosk setup
 
-## 6. Dauerbetrieb / Autostart
+1. Open the slideshow URL `http://<server-ip>:8080/` in a browser.
+2. For a permanent frame, use a kiosk browser (e.g. Fully Kiosk) or Android's
+   built-in **screen pinning** plus **Settings → Developer options → Stay awake
+   while charging**.
+3. LineageOS users can use the built-in **Jelly** browser for a quick test.
 
-Für automatischen Start nach dem Booten die App **Termux:Boot** installieren und
-ein Startskript anlegen:
+## Display options
+
+Configured through the schema (see the table above) and editable in the
+management interface. Per-request overrides are possible via the URL, e.g.
+`http://<server-ip>:8080/?interval=30000&album=Urlaub2023`.
+
+Aspect ratio: the `blur` fit mode fills the margins with a blurred copy of the
+photo, so any aspect ratio looks reasonable. Use `cover` for edge-to-edge with
+cropping, or `contain` for the whole image with plain black bars.
+
+On-screen text (weekday/month names, weather words) is currently hard-coded in
+German in `index.php`.
+
+## 6. Autostart (Termux:Boot)
+
+Install the **Termux:Boot** app, open it once, and disable battery optimization
+for Termux and Termux:Boot. Then:
 
 ```bash
 mkdir -p ~/.termux/boot
-cat > ~/.termux/boot/fotorahmen.sh <<'EOF'
+cat > ~/.termux/boot/photoframe.sh <<'EOF'
 #!/data/data/com.termux/files/usr/bin/sh
 sshd
-~/fotoframe/start.sh
+~/photoframe/start.sh
 EOF
-chmod +x ~/.termux/boot/fotorahmen.sh
+chmod +x ~/.termux/boot/photoframe.sh
 ```
 
-`start.sh` übernimmt Wake-Lock, Sync-Schleife, Diashow- und Admin-Server. Passe
-den Pfad `~/fotoframe` an deinen Projektordner an (z. B. `~/photoframe`).
+Adjust the path to your project folder.
 
----
+## Files and version control
 
-## 7. Tablet einrichten
+Committed: the PHP code (`config.php`, `schema.php`, `nas.php`, `log.php`,
+`store.php`, `index.php`, `list.php`, `img.php`, `sync.php`, `admin/`), the helper
+scripts, and `*.example` templates.
 
-1. **Fully Kiosk Browser** installieren (von fully-kiosk.com).
-2. **Start URL**: `http://<server-ip>:8080/`
-3. Aktivieren: *Keep Screen On*, *Fullscreen*, optional *Launch on Boot* und ein
-   *Screen On/Off Schedule* (nachts aus).
+Not committed (per-device / secret): `.env`, `settings.json`,
+`remote_subdirs.txt`, `logs/`, `photo/`, `.run/`.
 
-Zum schnellen Vorabtest tut es auch der eingebaute Browser **Jelly** mit
-derselben URL.
+## Logging
 
----
+`log.php` writes timestamped lines to `logs/app.log`, rotated to `app.log.1` once
+it exceeds `log_max_kb`. `sync.php` logs each run; `list.php` and `img.php` log
+errors only (not every request); the admin UI logs configuration changes. The
+last lines are shown in the management interface.
 
-## 8. Anzeige anpassen
+## Troubleshooting
 
-Die Diashow ist **`index.php`** und zieht ihre Werte aus der Konfiguration
-(Schema/`settings.json`/`.env`). Einstellen am besten im **Management-Interface**:
-
-| Option          | Bedeutung                                        |
-|-----------------|--------------------------------------------------|
-| `interval_ms`   | Anzeigedauer pro Bild (Standard 20 s)            |
-| `max_width`     | serverseitige Verkleinerungsbreite (px)          |
-| `show_clock`    | Uhr ein/aus                                       |
-| `show_date`     | Datum ein/aus                                     |
-| `show_weather`  | Wetter ein/aus (Open-Meteo, kein API-Key nötig)  |
-| `weather_lat` / `weather_lon` / `weather_city` | Ort fürs Wetter (in `.env`) |
-
-Einzelne Werte sind auch per URL überschreibbar, z. B.:
-`http://<server-ip>:8080/?interval=30000&album=Urlaub2023`
-
----
-
-## Was wird (nicht) eingecheckt?
-
-| Datei                         | Im Git? | Inhalt                          |
-|-------------------------------|---------|---------------------------------|
-| `.env`                        | nein    | NAS-Zugang, Ort, Admin-Passwort |
-| `settings.json`               | nein    | per UI geänderte Einstellungen  |
-| `remote_subdirs.txt`          | nein    | gewählte Ordner                 |
-| `logs/`                       | nein    | Logdateien                      |
-| `photo/`                      | nein    | heruntergeladene Bilder + Cache |
-| `*.example`                   | ja      | Vorlagen                        |
-| `config.php`, `schema.php`, `nas.php`, `log.php`, `store.php`, `index.php`, `admin/` | ja | Code (ohne Geheimnisse) |
-
----
-
-## Fehlersuche
-
-| Symptom                                   | Ursache / Lösung                                              |
-|-------------------------------------------|--------------------------------------------------------------|
-| PuTTY verbindet nicht                     | `sshd` läuft nicht, falscher Port (8022) oder falsche IP.    |
-| `git clone` fragt nach Passwort           | SSH-Key nicht bei GitHub hinterlegt oder falsche Repo-URL.    |
-| Diashow zeigt „NAS nicht erreichbar"      | Server läuft nicht oder falsche IP/Port in der Tablet-URL.    |
-| `list.php` liefert `[]`                    | `photo/` leer → erst `php sync.php` laufen lassen.            |
-| `sync.php`: „Login fehlgeschlagen"        | `.env`-Daten falsch, oder `nas_base`-Port stimmt nicht.      |
-| Keine Bilder aus einem Ordner             | Schreibweise in `remote_subdirs.txt` ≠ NAS (Groß/Klein, Leerzeichen). |
-| Bilder werden nicht verkleinert           | `gd` fehlt → `pkg install php-gd` (siehe Schritt 1). Läuft sonst unkomprimiert. |
-| `sync.php` sagt „kein Sync nötig"         | `source` steht auf `local`. Für NAS-Abgleich `source=synology` setzen. |
-| Admin-UI: keine Anmeldung möglich         | `ADMIN_PASS` in `.env` prüfen; leer = ungeschützt (dann Passwort setzen). |
-| Telefon-Display geht aus                  | `termux-wake-lock` und in Fully Kiosk *Keep Screen On*.       |
+| Symptom                              | Cause / fix                                                   |
+|--------------------------------------|--------------------------------------------------------------|
+| Slideshow shows "NAS nicht erreichbar" | server not running, or wrong IP/port in the tablet URL       |
+| `list.php` returns `[]`              | `photo/` is empty — run `php sync.php` (synology) or point `photo_dir` at your photos (local) |
+| `sync.php`: login failed             | check `.env` credentials and `NAS_BASE` port; 2FA users need a non-2FA account |
+| no images from a folder              | spelling in `remote_subdirs.txt` does not match the NAS (case, spaces) |
+| images are not downscaled            | `gd` missing → `pkg install php-gd`; otherwise originals are served |
+| `sync.php` says nothing to do        | `source` is `local`; set it to `synology` for NAS sync       |
+| admin login fails                    | check `ADMIN_PASS` in `.env` (empty = unprotected)           |
+| display turns off                    | use `termux-wake-lock` and keep-screen-on in the kiosk browser |
+| script: bad interpreter / not found  | line endings — run `sed -i 's/\r$//' *.sh`                   |
