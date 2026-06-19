@@ -5,17 +5,45 @@ Ein schlanker Foto-Rahmen für ein altes Wandtablet: Ein kleiner PHP-Server
 Foto-Cache von einer **Synology-NAS** vor und zeigt die Bilder als Diashow im
 Browser des Tablets.
 
+```mermaid
+flowchart LR
+    subgraph SRC["Quelle"]
+        NAS[("Synology NAS<br/>Fotosammlung")]
+        LOC["Lokaler Ordner<br/>(Bilder liegen schon da)"]
+    end
+
+    subgraph PHONE["Altes Telefon · Termux / PHP (Server)"]
+        SYNC["sync.php<br/>Abgleich + Cache-Limit"]
+        CACHE[("photo/<br/>lokaler Foto-Cache")]
+        WEB["Foto-Webseite :8080<br/>index.php · list.php · img.php"]
+        ADMIN["Management-Webseite :8081<br/>admin/"]
+        CFG["Konfiguration<br/>config.php · schema.php<br/>settings.json · .env"]
+        LOG["log.php → logs/"]
+    end
+
+    TABLET["Altes Tablet<br/>Kiosk-Browser · Diashow im Vollbild"]
+    PC["Admin-Browser<br/>PC oder Handy"]
+
+    NAS -->|FileStation-API| SYNC
+    LOC -.->|kein Sync| CACHE
+    SYNC --> CACHE
+    CACHE --> WEB
+    WEB -->|"Bilder + Liste (HTTP)"| TABLET
+    PC -->|konfigurieren| ADMIN
+    ADMIN -->|schreibt| CFG
+    ADMIN -.->|testet / durchsucht| NAS
+    CFG -.->|liest| SYNC
+    CFG -.->|liest| WEB
+    SYNC --> LOG
+    WEB --> LOG
+    ADMIN --> LOG
 ```
-Wandtablet (Browser, Vollbild)
-   │  http://<server-ip>:8080/
-   ▼
-PHP-Server (Termux)
-   ├─ index.html  → Diashow (Crossfade, Uhr, Datum, Wetter)
-   ├─ list.php    → Liste der lokal vorhandenen Bilder (JSON)
-   ├─ img.php     → liefert/verkleinert Bilder, mit Cache
-   └─ sync.php    → holt Fotos von der NAS, hält das Größenlimit ein
-                    (lädt neue, löscht die ältesten)
-```
+
+**Ablauf:** Die **NAS** liefert die Fotos. Das **alte Telefon** (Server) gleicht
+sie per Sync in einen größenbegrenzten lokalen Cache ab und stellt zwei Webseiten
+bereit: die **Foto-Webseite** (Port 8080) für das Tablet und die
+**Management-Webseite** (Port 8081) zum Konfigurieren. Das **alte Tablet** zeigt
+nur die Foto-Webseite im Vollbild an.
 
 Der Server weiß nicht, was gerade angezeigt wird. Er sorgt nur dafür, dass
 lokal höchstens `cache_limit_mb` an Fotos liegen und ab und zu frische
