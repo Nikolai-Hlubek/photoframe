@@ -37,7 +37,7 @@ start() {                       # name  command...
 
 echo "Starte ..."
 start sync  php sync.php --loop
-start web   php -S 0.0.0.0:8080
+start web   php -S 0.0.0.0:8080 -t public
 start admin php -S 0.0.0.0:8081 -t admin
 
 # LAN-IP best effort ermitteln

@@ -1,7 +1,7 @@
 <?php
 /* index.php -> slideshow page. Display settings are injected from config.php
  * (which reads schema defaults + settings.json + .env). */
-$cfg = require __DIR__ . "/config.php";
+$cfg = require __DIR__ . "/../config.php";
 function jsbool($b) { return $b ? "true" : "false"; }
 $fit    = $cfg["image_fit"];                       // blur | contain | cover
 $fgsize = ($fit === "cover") ? "cover" : "contain";

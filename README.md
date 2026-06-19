@@ -207,7 +207,7 @@ start twice.
 
 ```bash
 php sync.php                       # sync once (synology source)
-php -S 0.0.0.0:8080                # slideshow
+php -S 0.0.0.0:8080 -t public      # slideshow
 php -S 0.0.0.0:8081 -t admin       # management interface
 ```
 
@@ -273,9 +273,14 @@ Adjust the path to your project folder.
 
 ## Files and version control
 
-Committed: the PHP code (`config.php`, `schema.php`, `nas.php`, `log.php`,
-`store.php`, `index.php`, `list.php`, `img.php`, `sync.php`, `admin/`), the helper
-scripts, and `*.example` templates.
+Committed: the PHP code — the web root `public/` (`index.php`, `list.php`,
+`img.php`), the management UI `admin/`, and the shared backend (`config.php`,
+`schema.php`, `nas.php`, `log.php`, `store.php`, `sync.php`) — plus the helper
+scripts and `*.example` templates.
+
+The slideshow server uses `public/` as its document root, so the backend files
+and the secret/config files (`.env`, `settings.json`, `logs/`, `photo/`) sit
+outside the web root and are not reachable over HTTP.
 
 Not committed (per-device / secret): `.env`, `settings.json`,
 `remote_subdirs.txt`, `logs/`, `photo/`, `.run/`.

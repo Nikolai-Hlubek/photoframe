@@ -5,8 +5,8 @@
  * Configuration lives centrally in config.php.
  */
 
-$cfg = require __DIR__ . "/config.php";
-require __DIR__ . "/log.php";
+$cfg = require __DIR__ . "/../config.php";
+require __DIR__ . "/../log.php";
 log_set_max($cfg["log_max_kb"]);
 
 $PHOTO_DIR = $cfg["photo_dir"];
