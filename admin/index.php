@@ -123,6 +123,13 @@ foreach ($schema as $f) { $groups[$f["group"]][] = $f; }
   #result { margin: 8px 0; font-size: 14px; }
   .chip { display: inline-block; background: #eef; border: 1px solid #ccd; border-radius: 14px;
           padding: 3px 10px; margin: 3px; font-size: 13px; cursor: pointer; }
+  #crumb { margin: 4px 0 10px; }
+  #crumb a { margin: 0 2px; }
+  .prow { display: flex; align-items: center; justify-content: space-between;
+          padding: 5px 2px; border-bottom: 1px solid #eee; }
+  .prow label { margin: 0; font-weight: 400; display: flex; align-items: center; gap: 8px; }
+  .prow input[type=checkbox] { width: 18px; height: 18px; }
+  .open { padding: 3px 10px; font-size: 12px; }
   pre.log { background: #111; color: #cfcfcf; padding: 12px; border-radius: 8px; font-size: 12px;
             max-height: 260px; overflow: auto; }
   a { color: #2f6fed; }
@@ -189,17 +196,24 @@ foreach ($schema as $f) { $groups[$f["group"]][] = $f; }
         <?php if ($gname === "NAS"): ?>
           <div class="bar" style="position:static;background:none;padding-top:12px">
             <button type="button" class="sec" onclick="nasTest()">Verbindung testen</button>
-            <button type="button" class="sec" onclick="nasBrowse()">NAS-Ordner durchsuchen</button>
           </div>
-          <div id="browse"></div>
         <?php endif; ?>
       </div>
     <?php endforeach; ?>
 
     <div class="card">
-      <h2>Ordnerauswahl (remote_subdirs.txt)</h2>
-      <p class="help">Ein Ordner pro Zeile (unter dem NAS-Basisordner). Leer = alle.</p>
-      <textarea name="remote_subdirs" id="subs"><?= h($subs_text) ?></textarea>
+      <h2>Ordnerauswahl</h2>
+      <p class="help">Durch die NAS-Ordner klicken und anhaken, was synchronisiert
+        werden soll. „öffnen" geht in einen Unterordner. Nichts ausgewählt = alle Ordner.</p>
+      <div class="bar" style="position:static;background:none;padding:0 0 8px">
+        <button type="button" class="sec" onclick="pickerLoad('')">Ordner von der NAS laden</button>
+      </div>
+      <div id="crumb" class="help"></div>
+      <div id="picker"></div>
+      <details style="margin-top:12px">
+        <summary class="help">Manuell bearbeiten (eine Zeile = ein Ordner)</summary>
+        <textarea name="remote_subdirs" id="subs"><?= h($subs_text) ?></textarea>
+      </details>
     </div>
 
     <div class="bar"><button type="submit">Speichern</button></div>
@@ -214,33 +228,80 @@ foreach ($schema as $f) { $groups[$f["group"]][] = $f; }
   </div>
 
   <script>
-    function nasParams() {
-      function v(n){ var e=document.getElementsByName(n)[0]; return e?encodeURIComponent(e.value):""; }
-      return "base="+v("f_nas_base")+"&user="+v("f_nas_user")+"&pass="+v("f_nas_pass")+"&dir="+v("f_remote_dir");
+    function v(n){ var e=document.getElementsByName(n)[0]; return e ? e.value : ""; }
+    function nasParams(){
+      return "base="+encodeURIComponent(v("f_nas_base"))+"&user="+encodeURIComponent(v("f_nas_user"))
+            +"&pass="+encodeURIComponent(v("f_nas_pass"))+"&dir="+encodeURIComponent(v("f_remote_dir"));
     }
-    function nasTest() {
+    function nasTest(){
       var r=document.getElementById("result"); r.textContent="Teste …";
       fetch("?action=test&"+nasParams()).then(function(x){return x.json();}).then(function(d){
         r.innerHTML='<span class="'+(d.ok?"ok":"warn")+'">'+(d.ok?"✓ ":"✗ ")+d.msg+'</span>';
       }).catch(function(){ r.textContent="Test fehlgeschlagen."; });
     }
-    function nasBrowse() {
-      var b=document.getElementById("browse"); b.textContent="Lade Ordner …";
-      fetch("?action=browse&"+nasParams()).then(function(x){return x.json();}).then(function(d){
-        if(!d.ok){ b.innerHTML='<span class="warn">'+d.msg+'</span>'; return; }
-        if(!d.dirs.length){ b.textContent="Keine Unterordner in "+d.path; return; }
-        b.innerHTML="<p class='help'>"+d.path+" — klicken zum Hinzufügen:</p>";
-        d.dirs.forEach(function(name){
-          var c=document.createElement("span"); c.className="chip"; c.textContent=name;
-          c.onclick=function(){ addSub(name); };
-          b.appendChild(c);
-        });
-      }).catch(function(){ b.textContent="Konnte Ordner nicht laden."; });
+
+    /* ---- folder picker (navigate + checkbox select) ---- */
+    var curRel = "";   // current location relative to remote_dir
+
+    function isSel(rel){
+      var sel = document.getElementById("subs").value.split("\n");
+      for (var i=0;i<sel.length;i++){ if (sel[i].trim() === rel) return true; }
+      return false;
     }
-    function addSub(name){
-      var t=document.getElementById("subs");
-      var lines=t.value.split("\n").map(function(s){return s.trim();});
-      if(lines.indexOf(name)===-1){ t.value=(t.value.replace(/\s*$/,"")+"\n"+name).replace(/^\n/,""); }
+    function setSel(rel, on){
+      var t=document.getElementById("subs"), kept=[], found=false;
+      t.value.split("\n").forEach(function(l){
+        if (l.trim() === rel){ found=true; if (on) kept.push(l); }   // drop line if unchecking
+        else kept.push(l);
+      });
+      if (on && !found) kept.push(rel);
+      t.value = kept.join("\n");
+    }
+    function relPath(name){ return curRel ? curRel + "/" + name : name; }
+    function absPath(){ var b=v("f_remote_dir"); return curRel ? b + "/" + curRel : b; }
+
+    function pickerLoad(rel){
+      curRel = rel;
+      renderCrumb();
+      var p=document.getElementById("picker"); p.textContent="Lade …";
+      fetch("?action=browse&"+nasParams()+"&path="+encodeURIComponent(absPath()))
+        .then(function(x){return x.json();}).then(function(d){
+          if(!d.ok){ p.innerHTML='<span class="warn">'+d.msg+'</span>'; return; }
+          if(!d.dirs.length){ p.innerHTML="<p class='help'>Keine Unterordner hier.</p>"; return; }
+          p.innerHTML="";
+          d.dirs.forEach(function(name){
+            var rel=relPath(name);
+            var row=document.createElement("div"); row.className="prow";
+            var lab=document.createElement("label");
+            var cb=document.createElement("input"); cb.type="checkbox"; cb.checked=isSel(rel);
+            cb.onchange=function(){ setSel(rel, cb.checked); };
+            lab.appendChild(cb); lab.appendChild(document.createTextNode(" "+name));
+            var open=document.createElement("button");
+            open.type="button"; open.className="sec open"; open.textContent="öffnen ›";
+            open.onclick=function(){ pickerLoad(rel); };
+            row.appendChild(lab); row.appendChild(open);
+            p.appendChild(row);
+          });
+        }).catch(function(){ p.innerHTML='<span class="warn">Konnte Ordner nicht laden.</span>'; });
+    }
+
+    function renderCrumb(){
+      var c=document.getElementById("crumb"); c.innerHTML="";
+      function seg(label, rel){
+        var a=document.createElement("a"); a.href="#"; a.textContent=label;
+        a.onclick=function(e){ e.preventDefault(); pickerLoad(rel); };
+        return a;
+      }
+      c.appendChild(document.createTextNode("Ort: "));
+      c.appendChild(seg("Basis",""));
+      if(curRel){
+        var acc="";
+        curRel.split("/").forEach(function(part){
+          acc = acc ? acc+"/"+part : part;
+          c.appendChild(document.createTextNode(" / "));
+          c.appendChild(seg(part, acc));
+        });
+      }
     }
   </script>
 
