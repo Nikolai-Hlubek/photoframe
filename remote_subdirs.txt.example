@@ -1,10 +1,10 @@
-# Vorlage -- kopieren nach remote_subdirs.txt und eigene Ordner eintragen:
+# Template -- copy to remote_subdirs.txt and add your own folders:
 #   cp remote_subdirs.txt.example remote_subdirs.txt
 #
-# Eine Zeile = ein Unterordner unter remote_dir (rekursiv).
-# Zeilen mit # sind Kommentare. Datei fehlt oder leer = ALLE Ordner anzeigen.
+# One line = one sub-folder under remote_dir (recursive).
+# Lines starting with # are comments. Missing or empty file = show ALL folders.
 #
-# Beispiel:
+# Example:
 # Urlaub2023
 # Familie
 # Feiern/Hochzeit

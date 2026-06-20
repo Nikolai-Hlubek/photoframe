@@ -1,12 +1,12 @@
 #!/data/data/com.termux/files/usr/bin/sh
 #
-# start.sh  ->  faehrt alles zusammen hoch:
-#   - termux-wake-lock (Bildschirm/Prozess wachhalten)
-#   - sync.php --loop   (NAS-Abgleich, nur bei Quelle synology aktiv)
-#   - Diashow-Server    auf Port 8080
-#   - Admin-Server      auf Port 8081
+# start.sh  ->  brings everything up together:
+#   - termux-wake-lock (keep screen/process awake)
+#   - sync.php --loop   (NAS sync, only active for the synology source)
+#   - slideshow server  on port 8080
+#   - admin server      on port 8081
 #
-# PIDs liegen in .run/, Ausgaben in logs/. Stoppen mit ./stop.sh
+# PIDs are stored in .run/, output in logs/. Stop with ./stop.sh
 
 cd "$(dirname "$0")" || exit 1
 
@@ -25,7 +25,7 @@ if ! command -v php >/dev/null 2>&1; then
   exit 1
 fi
 
-# Bildschirm/Prozess wachhalten (falls in Termux verfuegbar)
+# keep screen/process awake (if available in Termux)
 command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock
 
 start() {                       # name  command...
@@ -40,7 +40,7 @@ start sync  php sync.php --loop
 start web   php -S 0.0.0.0:8080 -t public
 start admin php -S 0.0.0.0:8081 -t admin
 
-# LAN-IP best effort ermitteln
+# best-effort detection of the LAN IP
 IP="$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?([0-9]+\.){3}[0-9]+' | grep -v '127.0.0.1' | head -1 | grep -Eo '([0-9]+\.){3}[0-9]+')"
 [ -z "$IP" ] && IP="<phone-ip>"
 

@@ -15,7 +15,7 @@ if (!function_exists("store_write_env")) {
     function store_write_env($path, $pairs) {
         $existing = function_exists("load_env") ? load_env($path) : array();
         $merged = array_merge($existing, $pairs);   // new values win, unknown keys kept
-        $out = "# NAS-Zugang/Adresse, Ort und Admin-Passwort -- wird NICHT eingecheckt\n";
+        $out = "# NAS access/address, location and admin password -- not committed\n";
         foreach ($merged as $k => $v) {
             $out .= $k . "=" . str_replace(array("\r", "\n"), "", (string)$v) . "\n";
         }

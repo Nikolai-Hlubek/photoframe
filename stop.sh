@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/sh
 #
-# stop.sh  ->  faehrt alles wieder herunter, was start.sh gestartet hat.
+# stop.sh  ->  shuts down everything that start.sh started.
 
 cd "$(dirname "$0")" || exit 1
 
@@ -21,7 +21,7 @@ for n in sync web admin; do
   fi
 done
 
-# Falls noch verwaiste php-Server laufen (z.B. nach Absturz), aufraeumen:
+# clean up any orphaned php servers (e.g. after a crash):
 pkill -f "php -S 0.0.0.0:8080" 2>/dev/null
 pkill -f "php -S 0.0.0.0:8081" 2>/dev/null
 pkill -f "php sync.php --loop" 2>/dev/null

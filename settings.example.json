@@ -1,5 +1,5 @@
 {
-  "_hinweis": "Vorlage. Die echte settings.json wird per Admin-UI erzeugt und ist gitignored. Werte hier sind die Standardwerte; weglassen = Default aus schema.php.",
+  "_note": "Template. The real settings.json is created via the admin UI and is gitignored. The values here are the defaults; omit a key to use the default from schema.php.",
   "source": "synology",
   "show_clock": true,
   "show_date": true,

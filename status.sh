@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/sh
 #
-# status.sh  ->  zeigt, welche Prozesse laufen.
+# status.sh  ->  shows which processes are running.
 
 cd "$(dirname "$0")" || exit 1
 

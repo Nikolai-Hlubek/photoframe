@@ -13,7 +13,7 @@ $showbg = ($fit === "blur");
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Fotorahmen</title>
 <style>
-  /* --uiscale: feintuning; Basis-Groessen in vmin skalieren mit der Displaygroesse */
+  /* --uiscale: fine-tuning; base sizes use vmin so they scale with the display */
   :root { --uiscale: <?= json_encode((float)$cfg["ui_scale"]) ?>; }
   html, body {
     margin: 0;
