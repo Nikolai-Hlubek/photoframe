@@ -73,6 +73,9 @@ return array(
           "help"=>"contain = ganzes Bild (schwarze Raender), cover = formatfuellend (beschnitten), blur = Raender unscharf fuellen.",
           "type"=>"select", "options"=>array("blur","contain","cover"),
           "default"=>"blur", "store"=>"settings"),
+    array("key"=>"swipe_reverse", "label"=>"Wischrichtung umkehren", "group"=>"Anzeige",
+          "help"=>"Aus: links wischen = naechstes Bild. An: links wischen = zurueck.",
+          "type"=>"bool", "default"=>false, "store"=>"settings"),
 
     /* ---------- Cache / sync ---------- */
     array("key"=>"photo_dir", "label"=>"Bilderordner", "group"=>"Cache/Sync",

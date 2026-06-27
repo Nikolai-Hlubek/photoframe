@@ -86,12 +86,23 @@ $showbg = ($fit === "blur");
   #weather .wsym  { font-size: 26px; font-size: calc(4vmin * var(--uiscale)); vertical-align: middle; margin-right: 6px; }
   #weather .wtemp { font-size: 30px; font-size: calc(4.6vmin * var(--uiscale)); vertical-align: middle; }
   #weather .wdesc { font-size: 17px; font-size: calc(2.6vmin * var(--uiscale)); color: rgba(255,255,255,0.7); }
+
+  /* swipe direction hint */
+  #hint {
+    position: absolute; top: 50%;
+    -webkit-transform: translateY(-50%); transform: translateY(-50%);
+    font-family: sans-serif; font-weight: 300; font-size: 13vmin;
+    color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,0.7);
+    opacity: 0; pointer-events: none;
+    -webkit-transition: opacity 0.3s ease; transition: opacity 0.3s ease;
+  }
 </style>
 </head>
 <body>
   <div id="a" class="layer"><div class="bg"></div><div class="fg"></div></div>
   <div id="b" class="layer"><div class="bg"></div><div class="fg"></div></div>
   <div id="message">Lade Bilder &hellip;</div>
+  <div id="hint"></div>
 
   <div id="datetime" class="overlay">
     <div id="clock"></div>
@@ -134,11 +145,15 @@ $showbg = ($fit === "blur");
   var fgs = [aEl.getElementsByClassName("fg")[0], bEl.getElementsByClassName("fg")[0]];
   var bgs = [aEl.getElementsByClassName("bg")[0], bEl.getElementsByClassName("bg")[0]];
   var FIT = <?= json_encode($fit) ?>;
+  var SWIPE_REVERSE = <?= jsbool($cfg["swipe_reverse"]) ?>;
   var front   = 0;            // currently visible layer
   var images  = [];          // list of image paths (relative)
-  var idx     = 0;
+  var cur     = -1;          // index of the currently shown image
+  var gen     = 0;           // navigation token (drops stale image loads)
   var timer   = null;
   var msgEl   = document.getElementById("message");
+  var hintEl  = document.getElementById("hint");
+  var hintT   = null;
 
   function parseQuery() {
     var out = {}, s = window.location.search.replace(/^\?/, "");
@@ -180,10 +195,9 @@ $showbg = ($fit === "blur");
         images = data;
         if (initial) {
           hideMessage();
-          idx = 0;
-          showNext();
-          if (timer) clearInterval(timer);
-          timer = setInterval(showNext, INTERVAL_MS);
+          cur = -1;
+          step(1, false);          // show the first image
+          restartTimer();
         }
       } else if (initial) {
         showMessage("NAS nicht erreichbar (HTTP " + xhr.status + "). Neuer Versuch …");
@@ -193,14 +207,35 @@ $showbg = ($fit === "blur");
     xhr.send();
   }
 
-  function showNext() {
-    if (!images.length) return;
-    var path = images[idx];
-    idx = (idx + 1) % images.length;
-    if (idx === 0 && SHUFFLE) shuffle(images); // reshuffle each round
+  function restartTimer() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(function () { step(1, false); }, INTERVAL_MS);
+  }
 
+  /* advance by dir (+1 next, -1 prev); manual nav also resets the autoplay timer */
+  function step(dir, manual) {
+    if (!images.length) return;
+    showAt((cur + dir + images.length) % images.length, dir, 0);
+    if (manual) { restartTimer(); showHint(dir); }
+  }
+
+  function showHint(dir) {
+    if (!hintEl) return;
+    if (dir > 0) { hintEl.innerHTML = "›"; hintEl.style.right = "4vmin"; hintEl.style.left = "auto"; }
+    else         { hintEl.innerHTML = "‹"; hintEl.style.left = "4vmin"; hintEl.style.right = "auto"; }
+    hintEl.style.opacity = "0.85";
+    if (hintT) clearTimeout(hintT);
+    hintT = setTimeout(function () { hintEl.style.opacity = "0"; }, 350);
+  }
+
+  function showAt(i, dir, tries) {
+    if (tries > images.length) return;          // every image broken -> give up
+    cur = i;
+    var myGen = ++gen;                           // newest navigation wins
+    var path  = images[i];
     var img = new Image();
     img.onload = function () {
+      if (myGen !== gen) return;                 // superseded by a newer swipe
       var back = 1 - front;
       var u = "url('" + imageUrl(path).replace(/'/g, "%27") + "')";
       fgs[back].style.backgroundImage = u;
@@ -209,7 +244,10 @@ $showbg = ($fit === "blur");
       layers[front].className = "layer";
       front = back;
     };
-    img.onerror = function () { showNext(); }; // skip broken image
+    img.onerror = function () {                   // skip broken image, same direction
+      if (myGen !== gen) return;
+      showAt((i + dir + images.length) % images.length, dir, tries + 1);
+    };
     img.src = imageUrl(path);
   }
 
@@ -274,12 +312,34 @@ $showbg = ($fit === "blur");
   }
   if (SHOW_WEATHER) { loadWeather(); setInterval(loadWeather, WEATHER_MS); }
 
-  /* tap = try fullscreen (best effort) */
-  document.body.addEventListener("click", function () {
+  /* ---- touch: swipe = previous/next, tap = fullscreen ---- */
+  var sx = 0, sy = 0, stime = 0;
+  document.body.addEventListener("touchstart", function (e) {
+    var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; stime = Date.now();
+  }, false);
+  document.body.addEventListener("touchend", function (e) {
+    var t = e.changedTouches[0];
+    var dx = t.clientX - sx, dy = t.clientY - sy, dt = Date.now() - stime;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) {
+      var d = dx < 0 ? 1 : -1;              // swipe left = next, swipe right = previous
+      if (SWIPE_REVERSE) d = -d;            // ... unless reversed in the settings
+      step(d, true);
+    } else if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 400) {
+      tryFullscreen();                       // tap
+    }
+  }, false);
+
+  /* keyboard arrows (handy when testing on a PC) */
+  document.addEventListener("keydown", function (e) {
+    if (e.keyCode === 39) step(1, true);          // right arrow = next
+    else if (e.keyCode === 37) step(-1, true);    // left arrow = previous
+  }, false);
+
+  function tryFullscreen() {
     var el = document.documentElement;
     var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen;
     if (fn) { try { fn.call(el); } catch (e) {} }
-  }, false);
+  }
 
   /* refresh list periodically (new photos) */
   setInterval(function () { loadList(false); }, RELOAD_LIST_MS);
