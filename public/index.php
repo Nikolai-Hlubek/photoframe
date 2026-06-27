@@ -25,6 +25,7 @@ $showbg = ($fit === "blur");
     cursor: none;
     -ms-touch-action: none;
     touch-action: none;     /* let our JS handle swipes instead of the browser */
+    overscroll-behavior: none;   /* kill the gray edge-glow / overscroll */
   }
   /* Two stacked layers for the crossfade; each has a (blurred) bg + the fg image */
   .layer {
