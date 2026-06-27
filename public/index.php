@@ -15,6 +15,9 @@ $showbg = ($fit === "blur");
 <style>
   /* --uiscale: fine-tuning; base sizes use vmin so they scale with the display */
   :root { --uiscale: <?= json_encode((float)$cfg["ui_scale"]) ?>; }
+  /* touch-action is NOT inherited -> set it on every element, otherwise the
+     full-screen image layers grab the swipe before our JS sees it */
+  * { -ms-touch-action: none; touch-action: none; }
   html, body {
     margin: 0;
     padding: 0;
