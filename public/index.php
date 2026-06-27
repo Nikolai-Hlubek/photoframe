@@ -23,6 +23,8 @@ $showbg = ($fit === "blur");
     background: #000;
     overflow: hidden;
     cursor: none;
+    -ms-touch-action: none;
+    touch-action: none;     /* let our JS handle swipes instead of the browser */
   }
   /* Two stacked layers for the crossfade; each has a (blurred) bg + the fg image */
   .layer {
@@ -317,6 +319,10 @@ $showbg = ($fit === "blur");
   document.body.addEventListener("touchstart", function (e) {
     var t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; stime = Date.now();
   }, false);
+  /* keep the browser from turning the swipe into a scroll/back gesture */
+  document.body.addEventListener("touchmove", function (e) {
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
   document.body.addEventListener("touchend", function (e) {
     var t = e.changedTouches[0];
     var dx = t.clientX - sx, dy = t.clientY - sy, dt = Date.now() - stime;
