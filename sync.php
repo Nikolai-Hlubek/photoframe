@@ -62,7 +62,7 @@ function run_sync() {
            $LOCAL_DIR, $DELETE_OLD, $CACHE_LIMIT, $REFRESH, $EXT;
 
     logmsg("Login an " . $NAS_BASE . " ...");
-    $sid = nas_login($NAS_BASE, $NAS_USER, $NAS_PASS);
+    $sid = login_with_retry();
     if (!$sid) { logmsg("FEHLER: Login fehlgeschlagen. " . $GLOBALS["NAS_ERR"]); return; }
 
     if (!is_dir($LOCAL_DIR)) @mkdir($LOCAL_DIR, 0777, true);
@@ -131,6 +131,19 @@ function run_sync() {
 
     nas_logout($NAS_BASE, $sid);
     logmsg("Sync fertig.");
+}
+
+/* A NAS with sleeping disks does not answer the login within the curl timeout, but is awake a
+   minute later. Retry only when there was no answer at all: repeating a rejected login would
+   count towards DSM's auto-block. */
+function login_with_retry() {
+    global $NAS_BASE, $NAS_USER, $NAS_PASS;
+    for ($try = 1; ; $try++) {
+        $sid = nas_login($NAS_BASE, $NAS_USER, $NAS_PASS);
+        if ($sid || $try > 2 || strpos($GLOBALS["NAS_ERR"], "Keine Antwort") !== 0) return $sid;
+        logmsg("  Keine Antwort (NAS wacht vermutlich auf), neuer Versuch in 60 s ...");
+        sleep(60);
+    }
 }
 
 /* deletes .cache files not displayed since KEEP_DAYS */
