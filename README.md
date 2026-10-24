@@ -131,7 +131,8 @@ Edit `.env`:
 ```
 NAS_USER=your_nas_user
 NAS_PASS=your_password
-NAS_BASE=http://192.168.1.10:5000     # NAS IP + port (5000 http / 5001 https)
+NAS_BASE=https://192.168.1.10:5001    # NAS IP + port (5001 https / 5000 http)
+NAS_PIN=sha256//...                   # https only: pinned NAS key, see below
 REMOTE_DIR=/photo                     # base folder on the NAS
 WEATHER_LAT=52.52
 WEATHER_LON=13.41
@@ -141,6 +142,19 @@ ADMIN_PASS=                           # management UI password (empty = unprotec
 
 For a NAS source, create a dedicated user with **read-only** access to the photo
 folder. Inline `# comments` after a value are supported.
+
+**HTTPS with a pinned key.** The NAS certificate is usually self-signed or not
+issued for the NAS IP, so a normal certificate check fails. Instead, photoframe
+pins the public key of the certificate. Read it once inside your own network and
+put the printed line into `.env`:
+
+```bash
+php nas_pin.php 192.168.1.10:5001
+```
+
+A different key is rejected (`SSL: public key does not match pinned public key`).
+The expiry date does not matter, only the key. If you replace the NAS certificate,
+run the command again. Without `NAS_PIN` the connection is not verified.
 
 ### General settings — schema and `settings.json`
 
@@ -276,7 +290,7 @@ Adjust the path to your project folder.
 Committed: the PHP code — the web root `public/` (`index.php`, `list.php`,
 `img.php`), the management UI `admin/`, and the shared backend (`config.php`,
 `schema.php`, `nas.php`, `log.php`, `store.php`, `sync.php`) — plus the helper
-scripts and `*.example` templates.
+scripts (including `nas_pin.php`) and `*.example` templates.
 
 The slideshow server uses `public/` as its document root, so the backend files
 and the secret/config files (`.env`, `settings.json`, `logs/`, `photo/`) sit
@@ -299,6 +313,7 @@ last lines are shown in the management interface.
 | Slideshow shows "NAS nicht erreichbar" | server not running, or wrong IP/port in the tablet URL       |
 | `list.php` returns `[]`              | `photo/` is empty — run `php sync.php` (synology) or point `photo_dir` at your photos (local) |
 | `sync.php`: login failed             | check `.env` credentials and `NAS_BASE` port; 2FA users need a non-2FA account |
+| `public key does not match pinned public key` | NAS certificate replaced → `php nas_pin.php <ip>:5001`, update `NAS_PIN` |
 | no images from a folder              | spelling in `remote_subdirs.txt` does not match the NAS (case, spaces) |
 | images are not downscaled            | `gd` missing → `pkg install php-gd`; otherwise originals are served |
 | `sync.php` says nothing to do        | `source` is `local`; set it to `synology` for NAS sync       |

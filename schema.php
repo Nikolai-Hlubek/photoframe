@@ -29,8 +29,11 @@ return array(
 
     /* ---------- NAS (secrets/address in .env) ---------- */
     array("key"=>"nas_base", "label"=>"NAS-Adresse", "group"=>"NAS",
-          "help"=>"IP + Port, z.B. http://192.168.1.10:5000", "type"=>"string",
+          "help"=>"IP + Port, z.B. https://192.168.1.10:5001 (mit Pin) oder http://192.168.1.10:5000", "type"=>"string",
           "default"=>"", "store"=>"env", "env"=>"NAS_BASE"),
+    array("key"=>"nas_pin", "label"=>"NAS-Schluessel (Pin)", "group"=>"NAS",
+          "help"=>"Nur fuer https: sha256//... aus 'php nas_pin.php <ip>:5001'. Leer = Zertifikat ungeprueft.",
+          "type"=>"string", "default"=>"", "store"=>"env", "env"=>"NAS_PIN"),
     array("key"=>"nas_user", "label"=>"NAS-Benutzer", "group"=>"NAS",
           "help"=>"Benutzer mit Leserecht auf den Fotoordner.", "type"=>"string",
           "default"=>"", "store"=>"env", "env"=>"NAS_USER"),

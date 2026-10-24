@@ -17,6 +17,7 @@ require $ROOT . "/log.php";
 require $ROOT . "/nas.php";
 require $ROOT . "/store.php";
 log_set_max($cfg["log_max_kb"]);
+$GLOBALS["NAS_PIN"] = $cfg["nas_pin"];
 
 $ENV_FILE = $ROOT . "/.env";
 $SET_FILE = $ROOT . "/settings.json";

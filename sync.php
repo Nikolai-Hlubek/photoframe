@@ -21,6 +21,7 @@ require __DIR__ . "/log.php";
 require __DIR__ . "/nas.php";
 
 log_set_max($cfg["log_max_kb"]);
+$GLOBALS["NAS_PIN"] = $cfg["nas_pin"];
 
 $SOURCE      = $cfg["source"];
 $NAS_BASE    = $cfg["nas_base"];

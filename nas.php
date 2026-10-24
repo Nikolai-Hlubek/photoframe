@@ -4,12 +4,14 @@
  *
  * Shared by sync.php (download) and admin/ (connection test, folder picker).
  * All functions take the base URL / sid explicitly. The last transport error
- * is exposed in $GLOBALS["NAS_ERR"].
+ * is exposed in $GLOBALS["NAS_ERR"]. Callers set $GLOBALS["NAS_PIN"] from
+ * $cfg["nas_pin"] to pin the NAS certificate for https.
  */
 
 if (!function_exists("nas_login")) {
 
     $GLOBALS["NAS_ERR"] = "";
+    if (!isset($GLOBALS["NAS_PIN"])) $GLOBALS["NAS_PIN"] = "";
 
     function nas_login($base, $user, $pass) {
         $url = $base . "/webapi/auth.cgi?api=SYNO.API.Auth&version=3&method=login"
@@ -110,12 +112,22 @@ if (!function_exists("nas_login")) {
         return in_array(strtolower(substr($name, $dot + 1)), $exts, true);
     }
 
+    /* The NAS certificate is self-signed and not issued for its IP, so instead of a CA check
+       its public key is pinned (NAS_PIN = "sha256//..."). Without a pin TLS stays unverified. */
+    function nas_curl_tls($ch) {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        if ($GLOBALS["NAS_PIN"] !== "") {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+            curl_setopt($ch, CURLOPT_PINNEDPUBLICKEY, $GLOBALS["NAS_PIN"]);
+        }
+    }
+
     function nas_http_get($url) {
         $GLOBALS["NAS_ERR"] = "";
         if (function_exists("curl_init")) {
             $ch = curl_init($url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            nas_curl_tls($ch);
             curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
             $body = curl_exec($ch);
@@ -125,6 +137,7 @@ if (!function_exists("nas_login")) {
             }
             return $body;
         }
+        if ($GLOBALS["NAS_PIN"] !== "") { $GLOBALS["NAS_ERR"] = "NAS_PIN braucht PHP-curl"; return false; }
         $body = @file_get_contents($url);
         if ($body === false) $GLOBALS["NAS_ERR"] = "file_get_contents fehlgeschlagen (allow_url_fopen?)";
         return $body;
@@ -136,7 +149,7 @@ if (!function_exists("nas_login")) {
             if (!$fp) return false;
             $ch = curl_init($url);
             curl_setopt($ch, CURLOPT_FILE, $fp);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            nas_curl_tls($ch);
             curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 300);
             $ok = curl_exec($ch);
@@ -144,6 +157,7 @@ if (!function_exists("nas_login")) {
             if (!$ok) @unlink($localFile);
             return (bool)$ok;
         }
+        if ($GLOBALS["NAS_PIN"] !== "") return false;
         $data = @file_get_contents($url);
         if ($data === false) return false;
         return file_put_contents($localFile, $data) !== false;
